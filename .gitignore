@@ -1,2 +1,7 @@
 .env
+*.swp
+*.swo
+*.log
+backups/
+backup.log
 data/

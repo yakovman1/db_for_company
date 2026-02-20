@@ -1,15 +1,28 @@
 #!/bin/bash
+set -euo pipefail
 
-DATE=$(date +"%Y-%m-%d_%H-%M")
-BACKUP_DIR="./backups"
+# --- настройки БД ---
+DB_NAME="ATPTLP_1"
+DB_USER="admin"
+
+# --- пути ---
+BASE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+BACKUP_DIR="${BASE_DIR}/backups"
+
+DATE="$(date +'%Y-%m-%d_%H-%M')"
 FILENAME="backup_${DATE}.sql"
+TMP_FILE="${BACKUP_DIR}/${FILENAME}.tmp"
 
-echo "[*] Create backup: $FILENAME"
+echo "[*] Create backup: ${FILENAME}"
 
-docker exec company_postgres pd_dump \
-  -U $POSTGRES_USER \
-  -d $POSTGRES_DB \
+mkdir -p "${BACKUP_DIR}"
+
+docker exec company_postgres pg_dump \
+  -U "${DB_USER}" \
+  -d "${DB_NAME}" \
   -F p \
-  > "${BACKUP_DIR}/${FILENAME}"
+  > "${TMP_FILE}"
 
-echo "[+] Ready: "${BACKUP_DIR}/${FILENAME}"
+mv "${TMP_FILE}" "${BACKUP_DIR}/${FILENAME}"
+
+echo "[+] Backup saved to ${BACKUP_DIR}/${FILENAME}"
