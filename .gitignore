@@ -5,3 +5,5 @@
 backups/
 backup.log
 data/
+**/bin/
+**/obj/

@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     minio_endpoint: str = Field(..., alias="MINIO_ENDPOINT")
     minio_access_key: str = Field(..., alias="MINIO_ACCESS_KEY")
     minio_secret_key: str = Field(..., alias="MINIO_SECRET_KEY")
+    minio_public_endpoint: str | None = Field(
+        default=None, validation_alias=AliasChoices("MINIO_PUBLIC_ENDPOINT", "MINIO_PRESIGN_ENDPOINT")
+    )
     minio_bucket: str = Field(..., validation_alias=AliasChoices("MINIO_BUCKET_FAMILIES", "MINIO_BUCKET"))
     minio_region: str = Field("us-east-1", alias="MINIO_REGION")
     minio_use_ssl: bool = Field(default=False, alias="MINIO_USE_SSL")
@@ -35,6 +38,11 @@ class Settings(BaseSettings):
     @property
     def endpoint(self) -> str:
         return self.minio_endpoint
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def public_endpoint(self) -> str:
+        return self.minio_public_endpoint or self.minio_endpoint
 
     @computed_field  # type: ignore[misc]
     @property

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import mimetypes
 from typing import Any, Dict, Optional
 
 import boto3
@@ -17,24 +16,49 @@ settings = get_settings()
 class S3Service:
     def __init__(self) -> None:
         session = boto3.session.Session()
+        common_config = Config(
+            s3={"addressing_style": "path"},
+            signature_version="s3v4",
+            retries={"max_attempts": 3},
+        )
         self.client = session.client(
             "s3",
             endpoint_url=str(settings.endpoint),
             aws_access_key_id=settings.minio_access_key,
             aws_secret_access_key=settings.minio_secret_key,
             region_name=settings.region,
-            config=Config(s3={"addressing_style": "path"}, signature_version="s3v4", retries={"max_attempts": 3}),
+            config=common_config,
+            use_ssl=settings.use_ssl,
+        )
+        self.presign_client = session.client(
+            "s3",
+            endpoint_url=str(settings.public_endpoint),
+            aws_access_key_id=settings.minio_access_key,
+            aws_secret_access_key=settings.minio_secret_key,
+            region_name=settings.region,
+            config=common_config,
             use_ssl=settings.use_ssl,
         )
         self.bucket = settings.minio_bucket
 
     def generate_put_url(self, object_key: str, *, expires_in: int) -> str:
-        params = {"Bucket": self.bucket, "Key": object_key, "ContentType": "application/octet-stream"}
-        return self.client.generate_presigned_url("put_object", Params=params, ExpiresIn=expires_in)
+        params = {
+            "Bucket": self.bucket,
+            "Key": object_key,
+            "ContentType": "application/octet-stream",
+        }
+        return self.presign_client.generate_presigned_url(
+            "put_object", Params=params, ExpiresIn=expires_in
+        )
 
     def generate_get_url(self, object_key: str, *, expires_in: int) -> str:
-        params = {"Bucket": self.bucket, "Key": object_key, "ResponseContentType": mimetypes.guess_type(object_key)[0] or "application/octet-stream"}
-        return self.client.generate_presigned_url("get_object", Params=params, ExpiresIn=expires_in)
+        params = {
+            "Bucket": self.bucket,
+            "Key": object_key,
+        }
+        return self.presign_client.generate_presigned_url(
+            "get_object", Params=params, ExpiresIn=expires_in
+        )
 
     def head_object(self, object_key: str) -> Dict[str, Any] | None:
         try:
@@ -48,4 +72,3 @@ class S3Service:
 
 
 s3_service = S3Service()
-
