@@ -7,3 +7,7 @@ backup.log
 data/
 **/bin/
 **/obj/
+superset/
+docs/
+airflow/
+scripts/

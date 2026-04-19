@@ -1,6 +1,17 @@
-
+version: '3.8'
 
 services:
+  setup-folders:
+    image: alpine:latest
+    container_name: setup_folders
+    volumes:
+      - .:/infra
+    # Используем формат списка, чтобы Docker не запутался в кавычках и пробелах
+    command:
+      - sh
+      - -c
+      - mkdir -p /infra/airflow/dags /infra/airflow/logs /infra/airflow/plugins /infra/superset/conf
+
   postgres:
     image: postgres:16
     container_name: company_postgres
@@ -11,15 +22,20 @@ services:
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - ./data:/var/lib/postgresql/data
-    
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - '5432:5432'
-    
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} || exit 1"]
       interval: 30s
       timeout: 15s
       retries: 5
+
+# 2. КЭШ ДЛЯ SUPERSET/AIRFLOW
+  redis:
+    image: redis:7-alpine
+    container_name: company_redis
+    restart: unless-stopped
 
   minio:
     image: quay.io/minio/minio:latest
@@ -47,6 +63,91 @@ services:
       mc mb -p local/${MINIO_BUCKET_PREVIEW} || true &&
       exit 0
       "
+# 5. AIRFLOW (Инициализация таблиц и админа)
+  airflow-init:
+    image: apache/airflow:2.8.1
+    depends_on:
+      postgres: { condition: service_healthy }
+    env_file: .env
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/airflow
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create --username ${AIRFLOW_ADMIN_USER} --firstname Admin --lastname Admin --role Admin --email ${AIRFLOW_ADMIN_EMAIL} --password ${AIRFLOW_ADMIN_PASSWORD}
+
+  # 6. AIRFLOW (Веб-интерфейс)
+  airflow-webserver:
+    image: apache/airflow:2.8.1
+    container_name: airflow_webserver
+    restart: unless-stopped
+    depends_on:
+      airflow-init: { condition: service_completed_successfully }
+      setup-folders:
+        condition: service_completed_successfully
+    env_file: .env
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+    ports:
+      - "8080:8080"
+    command: webserver
+
+  # 7. AIRFLOW (Планировщик)
+  airflow-scheduler:
+    image: apache/airflow:2.8.1
+    container_name: airflow_scheduler
+    restart: unless-stopped
+    depends_on:
+      airflow-init: { condition: service_completed_successfully }
+    env_file: .env
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+    command: scheduler
+
+  # 8. SUPERSET (Инициализация)
+  superset-init:
+    image: apache/superset:latest
+    depends_on:
+      postgres: { condition: service_healthy }
+    env_file: .env
+    environment:
+      SQLALCHEMY_DATABASE_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/superset
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        superset db upgrade
+        superset fab create-admin --username ${SUPERSET_ADMIN_USER} --firstname Admin --lastname Admin --email ${SUPERSET_ADMIN_EMAIL} --password ${SUPERSET_ADMIN_PASSWORD}
+        superset init
+
+  # 9. SUPERSET (Веб-интерфейс)
+  superset:
+    image: apache/superset:latest
+    container_name: superset
+    restart: unless-stopped
+    depends_on:
+      superset-init: { condition: service_completed_successfully }
+      redis: { condition: service_started }
+      setup-folders:
+        condition: service_completed_successfully
+    env_file: .env
+    environment:
+      SQLALCHEMY_DATABASE_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/superset
+      SECRET_KEY: ${SUPERSET_SECRET_KEY}
+    volumes:
+      - superset_home:/app/superset_home
+    ports:
+      - "8088:8088"
 
   backend:
     build: ./backet
@@ -66,3 +167,4 @@ services:
 volumes:
   minio_data:
     driver: local
+  superset_home:
