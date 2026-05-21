@@ -153,6 +153,7 @@ class Opening(Base):
     depth: Mapped[float | None] = mapped_column(Float)
     diameter: Mapped[float | None] = mapped_column(Float)
     extra_fields: Mapped[dict | None] = mapped_column(JSONB)
+    content_hash: Mapped[str | None] = mapped_column(Text)
     status: Mapped[OpeningStatus] = mapped_column(
         SAEnum(OpeningStatus, native_enum=False), nullable=False, default=OpeningStatus.NEW
     )

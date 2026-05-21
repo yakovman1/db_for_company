@@ -35,6 +35,7 @@ class OpeningItemPayload(BaseModel):
     level_name: str = Field(alias="levelName")
     location: LocationPayload
     dimensions: DimensionsPayload
+    content_hash: str = Field(default="", alias="contentHash")
     extra_fields: Dict[str, Any] = Field(default_factory=dict, alias="extraFields")
 
 
@@ -77,6 +78,7 @@ class OpeningStatusItem(BaseModel):
     element_unique_id: str = Field(serialization_alias="elementUniqueId")
     opening_id: int = Field(serialization_alias="openingId")
     status: str
+    content_hash: str = Field(default="", serialization_alias="contentHash")
     updated_at: datetime = Field(serialization_alias="updatedAt")
 
 

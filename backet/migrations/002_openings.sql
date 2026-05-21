@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS "ATPTLP_openmodels".openings (
     depth DOUBLE PRECISION,
     diameter DOUBLE PRECISION,
     extra_fields JSONB,
+    content_hash TEXT,
     status TEXT NOT NULL DEFAULT 'new',
     schedule_name TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
