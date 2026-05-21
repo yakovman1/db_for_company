@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     # Security
     jwt_secret: str = Field(..., alias="JWT_SECRET")
     jwt_algorithm: str = Field("HS256", alias="JWT_ALGORITHM")
+    jwt_expires_seconds: int = Field(28800, alias="JWT_EXPIRES_SECONDS")
 
     # Presigned URL TTLs
     presigned_put_expires: int = Field(900, alias="PRESIGNED_PUT_EXPIRES")

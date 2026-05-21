@@ -8,6 +8,7 @@ from app.db.repositories.families import (
     update_object_key,
     update_status,
 )
+from app.db.repositories.openings import add_opening_history, list_openings_by_model
 from app.db.repositories.user_projects import get_user_projects, user_has_project
 
 __all__ = [
@@ -21,5 +22,7 @@ __all__ = [
     "update_status",
     "user_has_project",
     "get_user_projects",
+    "list_openings_by_model",
+    "add_opening_history",
 ]
 
