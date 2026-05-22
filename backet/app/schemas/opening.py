@@ -40,11 +40,13 @@ class OpeningItemPayload(BaseModel):
 
 
 class SyncOpeningsRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, protected_namespaces=())
 
     model_guid: uuid.UUID = Field(alias="modelGuid")
     model_name: str = Field(alias="modelName", min_length=1)
     schedule_name: str = Field(alias="scheduleName", min_length=1)
+    soft_delete_missing: bool = Field(default=False, alias="softDeleteMissing")
+    upsert_openings: bool = Field(default=True, alias="upsertOpenings")
     openings: List[OpeningItemPayload] = Field(default_factory=list)
 
 
@@ -78,12 +80,13 @@ class OpeningStatusItem(BaseModel):
     element_unique_id: str = Field(serialization_alias="elementUniqueId")
     opening_id: int = Field(serialization_alias="openingId")
     status: str
+    schedule_name: str = Field(default="", serialization_alias="scheduleName")
     content_hash: str = Field(default="", serialization_alias="contentHash")
     updated_at: datetime = Field(serialization_alias="updatedAt")
 
 
 class OpeningsListResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True, protected_namespaces=())
 
     model_guid: uuid.UUID = Field(serialization_alias="modelGuid")
     openings: List[OpeningStatusItem] = Field(default_factory=list)

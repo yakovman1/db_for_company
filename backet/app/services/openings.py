@@ -55,6 +55,16 @@ def _is_content_unchanged(current: Opening, payload: OpeningItemPayload) -> bool
     return current.content_hash == payload.content_hash
 
 
+def _belongs_to_schedule(record_schedule: str | None, selected_schedule: str) -> bool:
+    selected = (selected_schedule or "").strip()
+    record = (record_schedule or "").strip()
+    if not selected:
+        return True
+    if not record:
+        return True
+    return record.lower() == selected.lower()
+
+
 def _apply_payload(opening: Opening, payload: OpeningItemPayload, schedule_name: str) -> None:
     opening.element_id = payload.element_id
     opening.family_name = payload.family_name
@@ -87,20 +97,17 @@ def _history_actor(user: PluginUserContext) -> str:
     return f"{user.company_id}:{user.windows_user}"
 
 
-async def sync_openings(
+async def _upsert_openings(
+    *,
     user: PluginUserContext,
     payload: SyncOpeningsRequest,
     session: AsyncSession,
-) -> SyncOpeningsResponse:
-    sync_id = uuid.uuid4()
+    existing_by_uid: dict[str, Opening],
+    response: SyncOpeningsResponse,
+    items: list[SyncOpeningItemResult],
+) -> set[str]:
     created_by = _history_actor(user)
-
-    existing = await openings_repo.list_openings_by_model(session, model_guid=payload.model_guid)
-    existing_by_uid = {item.element_unique_id: item for item in existing}
     seen_uids: set[str] = set()
-
-    response = SyncOpeningsResponse(sync_id=sync_id)
-    items: list[SyncOpeningItemResult] = []
 
     for opening_payload in payload.openings:
         seen_uids.add(opening_payload.element_unique_id)
@@ -112,6 +119,7 @@ async def sync_openings(
                 opening = _create_opening(payload.model_guid, opening_payload, payload.schedule_name)
                 session.add(opening)
                 await session.flush()
+                existing_by_uid[opening.element_unique_id] = opening
                 await openings_repo.add_opening_history(
                     session,
                     opening_id=opening.id,
@@ -199,8 +207,27 @@ async def sync_openings(
                 )
             )
 
+    return seen_uids
+
+
+async def _soft_delete_missing(
+    *,
+    user: PluginUserContext,
+    payload: SyncOpeningsRequest,
+    session: AsyncSession,
+    existing_by_uid: dict[str, Opening],
+    seen_uids: set[str],
+    response: SyncOpeningsResponse,
+    items: list[SyncOpeningItemResult],
+) -> None:
+    created_by = _history_actor(user)
+
     for element_unique_id, opening in existing_by_uid.items():
-        if element_unique_id in seen_uids or opening.status == OpeningStatus.DELETED:
+        if element_unique_id in seen_uids:
+            continue
+        if opening.status == OpeningStatus.DELETED:
+            continue
+        if not _belongs_to_schedule(opening.schedule_name, payload.schedule_name):
             continue
 
         opening.status = OpeningStatus.DELETED
@@ -209,7 +236,7 @@ async def sync_openings(
             session,
             opening_id=opening.id,
             event_type=OpeningHistoryEventType.SOFT_DELETED,
-            payload={"element_unique_id": element_unique_id},
+            payload={"element_unique_id": element_unique_id, "schedule_name": payload.schedule_name},
             created_by=created_by,
         )
         response.soft_deleted += 1
@@ -220,6 +247,41 @@ async def sync_openings(
                 opening_id=opening.id,
                 status=opening.status.value,
             )
+        )
+
+
+async def sync_openings(
+    user: PluginUserContext,
+    payload: SyncOpeningsRequest,
+    session: AsyncSession,
+) -> SyncOpeningsResponse:
+    sync_id = uuid.uuid4()
+    existing = await openings_repo.list_openings_by_model(session, model_guid=payload.model_guid)
+    existing_by_uid = {item.element_unique_id: item for item in existing}
+
+    response = SyncOpeningsResponse(sync_id=sync_id)
+    items: list[SyncOpeningItemResult] = []
+    seen_uids = {opening.element_unique_id for opening in payload.openings}
+
+    if payload.upsert_openings:
+        seen_uids = await _upsert_openings(
+            user=user,
+            payload=payload,
+            session=session,
+            existing_by_uid=existing_by_uid,
+            response=response,
+            items=items,
+        )
+
+    if payload.soft_delete_missing:
+        await _soft_delete_missing(
+            user=user,
+            payload=payload,
+            session=session,
+            existing_by_uid=existing_by_uid,
+            seen_uids=seen_uids,
+            response=response,
+            items=items,
         )
 
     await session.commit()
@@ -241,6 +303,7 @@ async def list_openings(
                 element_unique_id=opening.element_unique_id,
                 opening_id=opening.id,
                 status=opening.status.value,
+                schedule_name=opening.schedule_name or "",
                 content_hash=opening.content_hash or "",
                 updated_at=opening.updated_at,
             )
