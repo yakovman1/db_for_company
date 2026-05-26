@@ -23,10 +23,13 @@ logger = get_logger(__name__)
 STATUS_PARAM = "ATP_OPN_Статус отверстия"
 
 
-def _sync_extra_fields(extra_fields: dict[str, Any] | None) -> dict[str, Any]:
+def _revision_status(extra_fields: dict[str, Any] | None) -> str:
     if not extra_fields:
-        return {}
-    return {key: value for key, value in extra_fields.items() if key != STATUS_PARAM}
+        return ""
+    value = extra_fields.get(STATUS_PARAM)
+    if value is None:
+        return ""
+    return str(value).strip()
 
 
 def _history_payload(opening: OpeningItemPayload, schedule_name: str) -> dict[str, Any]:
@@ -43,7 +46,7 @@ def _history_payload(opening: OpeningItemPayload, schedule_name: str) -> dict[st
         "height": opening.dimensions.height,
         "depth": opening.dimensions.depth,
         "diameter": opening.dimensions.diameter,
-        "extra_fields": _sync_extra_fields(opening.extra_fields),
+        "extra_fields": opening.extra_fields,
         "content_hash": opening.content_hash,
         "schedule_name": schedule_name,
     }
@@ -78,7 +81,7 @@ def _apply_payload(opening: Opening, payload: OpeningItemPayload, schedule_name:
     opening.height = payload.dimensions.height
     opening.depth = payload.dimensions.depth
     opening.diameter = payload.dimensions.diameter
-    opening.extra_fields = _sync_extra_fields(payload.extra_fields)
+    opening.extra_fields = dict(payload.extra_fields) if payload.extra_fields else {}
     opening.content_hash = payload.content_hash or None
     opening.schedule_name = schedule_name
 
@@ -304,6 +307,7 @@ async def list_openings(
                 opening_id=opening.id,
                 status=opening.status.value,
                 schedule_name=opening.schedule_name or "",
+                opening_revision_status=_revision_status(opening.extra_fields),
                 content_hash=opening.content_hash or "",
                 updated_at=opening.updated_at,
             )

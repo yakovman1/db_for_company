@@ -81,6 +81,7 @@ class OpeningStatusItem(BaseModel):
     opening_id: int = Field(serialization_alias="openingId")
     status: str
     schedule_name: str = Field(default="", serialization_alias="scheduleName")
+    opening_revision_status: str = Field(default="", serialization_alias="openingRevisionStatus")
     content_hash: str = Field(default="", serialization_alias="contentHash")
     updated_at: datetime = Field(serialization_alias="updatedAt")
 
