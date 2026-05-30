@@ -37,6 +37,8 @@ class InitUploadResponse(BaseModel):
     bucket: str
     object_key: str
     presigned_put_url: str | None = None
+    thumbnail_object_key: str | None = None
+    presigned_thumbnail_put_url: str | None = None
     expires_in_seconds: int
 
 
@@ -95,6 +97,7 @@ class FamilySummary(BaseModel):
     category: str | None = None
     is_primary: bool | None = None
     parent_family_id: uuid.UUID | None = None
+    has_thumbnail: bool = False
     metadata_json: Dict[str, Any] | None = None
     created_at: datetime
     updated_at: datetime
@@ -113,4 +116,20 @@ class ListFamiliesResponse(BaseModel):
 class DownloadUrlResponse(BaseModel):
     presigned_get_url: str
     expires_in_seconds: int
+
+
+class FavoriteItem(BaseModel):
+    family_id: uuid.UUID
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class FavoritesListResponse(BaseModel):
+    items: List[FavoriteItem]
+
+
+class AddFavoriteRequest(BaseModel):
+    family_id: uuid.UUID
 

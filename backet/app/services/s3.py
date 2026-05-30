@@ -41,11 +41,11 @@ class S3Service:
         )
         self.bucket = settings.minio_bucket
 
-    def generate_put_url(self, object_key: str, *, expires_in: int) -> str:
+    def generate_put_url(self, object_key: str, *, expires_in: int, content_type: str = "application/octet-stream") -> str:
         params = {
             "Bucket": self.bucket,
             "Key": object_key,
-            "ContentType": "application/octet-stream",
+            "ContentType": content_type,
         }
         return self.presign_client.generate_presigned_url(
             "put_object", Params=params, ExpiresIn=expires_in

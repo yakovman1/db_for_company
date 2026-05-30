@@ -48,6 +48,19 @@ def _build_object_key(project_id: uuid.UUID, family_id: uuid.UUID, sha256: str |
     return f"projects/{project_id}/families/{family_id}/{suffix}"
 
 
+def _build_thumbnail_key(project_id: uuid.UUID, family_id: uuid.UUID) -> str:
+    return f"projects/{project_id}/families/{family_id}/thumbnail.png"
+
+
+def _thumbnail_urls_for(project_id: uuid.UUID, family_id: uuid.UUID, is_primary: bool | None) -> tuple[str | None, str | None]:
+    """Возвращает (thumbnail_object_key, presigned_thumbnail_put_url) только для host-семейств."""
+    if not is_primary:
+        return None, None
+    key = _build_thumbnail_key(project_id, family_id)
+    url = s3_service.generate_put_url(key, expires_in=settings.presigned_put_expires, content_type="image/png")
+    return key, url
+
+
 async def init_upload(user: PluginUserContext, payload: InitUploadRequest, session) -> InitUploadResponse:
     project_id = await _project_id_for_user(session, user)
     has_identity = payload.family_name is not None and payload.category is not None and payload.is_primary is not None
@@ -64,6 +77,7 @@ async def init_upload(user: PluginUserContext, payload: InitUploadRequest, sessi
 
         if existing is not None:
             if payload.sha256 and existing.sha256 == payload.sha256:
+                thumb_key = _build_thumbnail_key(project_id, existing.id) if existing.is_primary else None
                 return InitUploadResponse(
                     family_id=existing.id,
                     version=existing.version,
@@ -72,6 +86,8 @@ async def init_upload(user: PluginUserContext, payload: InitUploadRequest, sessi
                     bucket=existing.bucket,
                     object_key=existing.object_key,
                     presigned_put_url=None,
+                    thumbnail_object_key=thumb_key,
+                    presigned_thumbnail_put_url=None,
                     expires_in_seconds=0,
                 )
 
@@ -85,6 +101,7 @@ async def init_upload(user: PluginUserContext, payload: InitUploadRequest, sessi
                 object_key=object_key,
             )
             presigned_put_url = s3_service.generate_put_url(object_key, expires_in=settings.presigned_put_expires)
+            thumb_key, thumb_url = _thumbnail_urls_for(project_id, family.id, payload.is_primary)
             return InitUploadResponse(
                 family_id=family.id,
                 version=family.version,
@@ -93,6 +110,8 @@ async def init_upload(user: PluginUserContext, payload: InitUploadRequest, sessi
                 bucket=family.bucket,
                 object_key=family.object_key,
                 presigned_put_url=presigned_put_url,
+                thumbnail_object_key=thumb_key,
+                presigned_thumbnail_put_url=thumb_url,
                 expires_in_seconds=settings.presigned_put_expires,
             )
 
@@ -114,6 +133,7 @@ async def init_upload(user: PluginUserContext, payload: InitUploadRequest, sessi
             version=1,
         )
         presigned_put_url = s3_service.generate_put_url(object_key, expires_in=settings.presigned_put_expires)
+        thumb_key, thumb_url = _thumbnail_urls_for(project_id, family.id, payload.is_primary)
         return InitUploadResponse(
             family_id=family.id,
             version=family.version,
@@ -122,6 +142,8 @@ async def init_upload(user: PluginUserContext, payload: InitUploadRequest, sessi
             bucket=family.bucket,
             object_key=family.object_key,
             presigned_put_url=presigned_put_url,
+            thumbnail_object_key=thumb_key,
+            presigned_thumbnail_put_url=thumb_url,
             expires_in_seconds=settings.presigned_put_expires,
         )
 
@@ -208,10 +230,21 @@ async def complete_upload(user: PluginUserContext, family_id: uuid.UUID, payload
     if uploaded_at and isinstance(uploaded_at, datetime) and uploaded_at.tzinfo is None:
         uploaded_at = uploaded_at.replace(tzinfo=timezone.utc)
 
+    has_thumbnail = False
+    if family.is_primary:
+        thumb_key = _build_thumbnail_key(project_id, family.id)
+        has_thumbnail = s3_service.head_object(thumb_key) is not None
+
     status_to_set = FamilyStatus.READY if head or payload.etag else FamilyStatus.UPLOADED
 
     return await repo.mark_ready(
-        session, family=family, etag=etag, uploaded_at=uploaded_at, size_bytes=size_bytes, status=status_to_set
+        session,
+        family=family,
+        etag=etag,
+        uploaded_at=uploaded_at,
+        size_bytes=size_bytes,
+        has_thumbnail=has_thumbnail,
+        status=status_to_set,
     )
 
 
@@ -250,3 +283,18 @@ async def get_download_url(user: PluginUserContext, family_id: uuid.UUID, sessio
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Family not found")
     _ensure_family_access(user, family, project_id)
     return s3_service.generate_get_url(family.object_key, expires_in=settings.presigned_get_expires)
+
+
+async def get_thumbnail_url(user: PluginUserContext, family_id: uuid.UUID, session) -> str:
+    project_id = await _project_id_for_user(session, user)
+    family = await repo.get_family(session, family_id)
+    if not family:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Family not found")
+    _ensure_family_access(user, family, project_id)
+    if not family.has_thumbnail:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thumbnail not available")
+    thumb_key = _build_thumbnail_key(project_id, family.id)
+    head = s3_service.head_object(thumb_key)
+    if not head:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thumbnail not available")
+    return s3_service.generate_get_url(thumb_key, expires_in=settings.presigned_get_expires)

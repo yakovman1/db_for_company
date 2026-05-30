@@ -167,9 +167,11 @@ async def mark_ready(
     etag: str | None = None,
     uploaded_at: datetime | None = None,
     size_bytes: int | None = None,
+    has_thumbnail: bool = False,
     status: FamilyStatus = FamilyStatus.READY,
 ) -> Family:
     family.status = status
+    family.has_thumbnail = has_thumbnail
     if etag:
         family.etag = etag
     if uploaded_at:
