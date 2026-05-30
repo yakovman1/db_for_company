@@ -34,7 +34,9 @@ def _ensure_family_access(user: PluginUserContext, family: Family, project_id: u
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Family access denied")
 
 
-def _build_object_key(project_id: uuid.UUID, family_id: uuid.UUID, sha256: str | None, original_filename: str) -> str:
+def _build_object_key(project_id: uuid.UUID, family_id: uuid.UUID, sha256: str | None, original_filename: str, *, stable: bool = False) -> str:
+    if stable:
+        return f"projects/{project_id}/families/{family_id}/family.rfa"
     suffix = ""
     if sha256:
         suffix = f"{sha256.lower()}.rfa"
@@ -48,9 +50,84 @@ def _build_object_key(project_id: uuid.UUID, family_id: uuid.UUID, sha256: str |
 
 async def init_upload(user: PluginUserContext, payload: InitUploadRequest, session) -> InitUploadResponse:
     project_id = await _project_id_for_user(session, user)
+    has_identity = payload.family_name is not None and payload.category is not None and payload.is_primary is not None
 
+    if has_identity:
+        existing = await repo.find_family_by_identity(
+            session,
+            project_id=project_id,
+            family_name=payload.family_name,  # type: ignore[arg-type]
+            category=payload.category,  # type: ignore[arg-type]
+            is_primary=payload.is_primary,  # type: ignore[arg-type]
+            parent_family_id=payload.parent_family_id,
+        )
+
+        if existing is not None:
+            if payload.sha256 and existing.sha256 == payload.sha256:
+                return InitUploadResponse(
+                    family_id=existing.id,
+                    version=existing.version,
+                    is_new=False,
+                    unchanged=True,
+                    bucket=existing.bucket,
+                    object_key=existing.object_key,
+                    presigned_put_url=None,
+                    expires_in_seconds=0,
+                )
+
+            object_key = _build_object_key(project_id, existing.id, payload.sha256, payload.original_filename, stable=True)
+            family = await repo.increment_version(
+                session,
+                family=existing,
+                sha256=payload.sha256,
+                size_bytes=payload.size_bytes,
+                original_filename=payload.original_filename,
+                object_key=object_key,
+            )
+            presigned_put_url = s3_service.generate_put_url(object_key, expires_in=settings.presigned_put_expires)
+            return InitUploadResponse(
+                family_id=family.id,
+                version=family.version,
+                is_new=False,
+                unchanged=False,
+                bucket=family.bucket,
+                object_key=family.object_key,
+                presigned_put_url=presigned_put_url,
+                expires_in_seconds=settings.presigned_put_expires,
+            )
+
+        family_id = uuid.uuid4()
+        object_key = _build_object_key(project_id, family_id, payload.sha256, payload.original_filename, stable=True)
+        family = await repo.create_family(
+            session,
+            family_id=family_id,
+            project_id=project_id,
+            bucket=settings.minio_bucket,
+            object_key=object_key,
+            original_filename=payload.original_filename,
+            sha256=payload.sha256,
+            size_bytes=payload.size_bytes,
+            family_name=payload.family_name,
+            category=payload.category,
+            is_primary=payload.is_primary,
+            parent_family_id=payload.parent_family_id,
+            version=1,
+        )
+        presigned_put_url = s3_service.generate_put_url(object_key, expires_in=settings.presigned_put_expires)
+        return InitUploadResponse(
+            family_id=family.id,
+            version=family.version,
+            is_new=True,
+            unchanged=False,
+            bucket=family.bucket,
+            object_key=family.object_key,
+            presigned_put_url=presigned_put_url,
+            expires_in_seconds=settings.presigned_put_expires,
+        )
+
+    # --- legacy: нет identity-полей, создаём запись как раньше ---
     family_id = uuid.uuid4()
-    object_key = _build_object_key(project_id, family_id, payload.sha256, payload.original_filename)
+    object_key = _build_object_key(project_id, family_id, payload.sha256, payload.original_filename, stable=False)
     family = await repo.create_family(
         session,
         family_id=family_id,
@@ -61,10 +138,12 @@ async def init_upload(user: PluginUserContext, payload: InitUploadRequest, sessi
         sha256=payload.sha256,
         size_bytes=payload.size_bytes,
     )
-
     presigned_put_url = s3_service.generate_put_url(object_key, expires_in=settings.presigned_put_expires)
     return InitUploadResponse(
         family_id=family.id,
+        version=family.version,
+        is_new=True,
+        unchanged=False,
         bucket=family.bucket,
         object_key=family.object_key,
         presigned_put_url=presigned_put_url,

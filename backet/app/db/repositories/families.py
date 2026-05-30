@@ -20,6 +20,11 @@ async def create_family(
     original_filename: str,
     sha256: str | None,
     size_bytes: int | None,
+    family_name: str | None = None,
+    category: str | None = None,
+    is_primary: bool | None = None,
+    parent_family_id: uuid.UUID | None = None,
+    version: int = 1,
 ) -> Family:
     family = Family(
         id=family_id or uuid.uuid4(),
@@ -29,9 +34,57 @@ async def create_family(
         original_filename=original_filename,
         sha256=sha256,
         size_bytes=size_bytes,
+        family_name=family_name,
+        category=category,
+        is_primary=is_primary,
+        parent_family_id=parent_family_id,
+        version=version,
         status=FamilyStatus.INITIATED,
     )
     session.add(family)
+    await session.commit()
+    await session.refresh(family)
+    return family
+
+
+async def find_family_by_identity(
+    session: AsyncSession,
+    *,
+    project_id: uuid.UUID,
+    family_name: str,
+    category: str,
+    is_primary: bool,
+    parent_family_id: uuid.UUID | None,
+) -> Family | None:
+    stmt = select(Family).where(
+        Family.project_id == project_id,
+        Family.family_name == family_name,
+        Family.category == category,
+        Family.is_primary == is_primary,
+    )
+    if parent_family_id is not None:
+        stmt = stmt.where(Family.parent_family_id == parent_family_id)
+    else:
+        stmt = stmt.where(Family.parent_family_id.is_(None))
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+async def increment_version(
+    session: AsyncSession,
+    *,
+    family: Family,
+    sha256: str | None,
+    size_bytes: int | None,
+    original_filename: str,
+    object_key: str,
+) -> Family:
+    family.version = family.version + 1
+    family.sha256 = sha256
+    family.size_bytes = size_bytes
+    family.original_filename = original_filename
+    family.object_key = object_key
+    family.status = FamilyStatus.INITIATED
     await session.commit()
     await session.refresh(family)
     return family

@@ -1,7 +1,9 @@
 from app.db.repositories.families import (
     count_families_by_project,
     create_family,
+    find_family_by_identity,
     get_family,
+    increment_version,
     list_families_by_project,
     mark_ready,
     update_metadata,
@@ -13,7 +15,9 @@ from app.db.repositories.user_projects import get_user_projects, user_has_projec
 
 __all__ = [
     "create_family",
+    "find_family_by_identity",
     "get_family",
+    "increment_version",
     "list_families_by_project",
     "count_families_by_project",
     "mark_ready",

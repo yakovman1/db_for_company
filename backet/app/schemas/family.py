@@ -14,6 +14,10 @@ class InitUploadRequest(BaseModel):
     original_filename: str = Field(min_length=1, max_length=255)
     size_bytes: int | None = Field(default=None, ge=0)
     sha256: str | None = Field(default=None, min_length=8, max_length=128)
+    family_name: str | None = Field(default=None, max_length=512)
+    category: str | None = Field(default=None, max_length=255)
+    is_primary: bool | None = None
+    parent_family_id: uuid.UUID | None = None
 
     @field_validator("sha256")
     @classmethod
@@ -27,9 +31,12 @@ class InitUploadRequest(BaseModel):
 
 class InitUploadResponse(BaseModel):
     family_id: uuid.UUID
+    version: int = 1
+    is_new: bool = True
+    unchanged: bool = False
     bucket: str
     object_key: str
-    presigned_put_url: str
+    presigned_put_url: str | None = None
     expires_in_seconds: int
 
 
@@ -76,6 +83,7 @@ class CompleteUploadRequest(BaseModel):
 
 class FamilySummary(BaseModel):
     id: uuid.UUID
+    version: int = 1
     project_id: uuid.UUID
     status: str
     bucket: str
@@ -83,6 +91,10 @@ class FamilySummary(BaseModel):
     original_filename: str
     sha256: str | None = None
     size_bytes: int | None = None
+    family_name: str | None = None
+    category: str | None = None
+    is_primary: bool | None = None
+    parent_family_id: uuid.UUID | None = None
     metadata_json: Dict[str, Any] | None = None
     created_at: datetime
     updated_at: datetime

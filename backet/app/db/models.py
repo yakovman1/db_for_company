@@ -46,6 +46,7 @@ class Family(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     status: Mapped[FamilyStatus] = mapped_column(
         SAEnum(FamilyStatus, native_enum=False), nullable=False, default=FamilyStatus.INITIATED
     )
@@ -54,6 +55,10 @@ class Family(Base):
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     sha256: Mapped[str | None] = mapped_column(String(128))
     size_bytes: Mapped[int | None] = mapped_column(Integer)
+    family_name: Mapped[str | None] = mapped_column(Text)
+    category: Mapped[str | None] = mapped_column(Text)
+    is_primary: Mapped[bool | None] = mapped_column(Boolean)
+    parent_family_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     metadata_json: Mapped[dict | None] = mapped_column(JSONB)
     etag: Mapped[str | None] = mapped_column(String(128))
     uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -65,6 +70,7 @@ class Family(Base):
     __table_args__ = (
         Index("ix_families_project_id", "project_id"),
         Index("ix_families_sha256", "sha256"),
+        Index("ix_families_identity", "project_id", "family_name", "category", "is_primary"),
         {"schema": SCHEMA_FAMILYMANAGER},
     )
 
