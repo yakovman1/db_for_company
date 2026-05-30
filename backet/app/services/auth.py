@@ -82,6 +82,14 @@ async def get_current_user(
     return UserContext(user_id=user_id, project_ids=project_ids)
 
 
+async def resolve_company_project_id(session: AsyncSession, company_id: str) -> uuid.UUID:
+    """Каталог семейств компании: project_id = companies.id (UUID)."""
+    company = await companies_repo.get_company(session, company_id=company_id)
+    if company is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Company not found")
+    return company.id
+
+
 async def get_plugin_user(
     authorization: Annotated[str | None, Header(alias="Authorization")],
     session: AsyncSession = Depends(get_session),

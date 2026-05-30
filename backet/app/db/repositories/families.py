@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Iterable, Sequence
+from typing import Iterable, Optional, Sequence
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,21 +44,41 @@ async def get_family(session: AsyncSession, family_id: uuid.UUID) -> Family | No
 
 
 async def list_families_by_project(
-    session: AsyncSession, *, project_id: uuid.UUID, limit: int = 50, offset: int = 0
+    session: AsyncSession,
+    *,
+    project_id: uuid.UUID,
+    limit: int = 20,
+    offset: int = 0,
+    is_primary: Optional[bool] = None,
+    parent_id: Optional[uuid.UUID] = None,
 ) -> Sequence[Family]:
     stmt = (
         select(Family)
         .where(Family.project_id == project_id)
-        .order_by(Family.created_at.desc())
-        .limit(limit)
-        .offset(offset)
     )
+    if is_primary is not None:
+        val = "true" if is_primary else "false"
+        stmt = stmt.where(Family.metadata_json["extra"]["is_primary"].astext == val)
+    if parent_id is not None:
+        stmt = stmt.where(Family.metadata_json["extra"]["parent_family_id"].astext == str(parent_id))
+    stmt = stmt.order_by(Family.created_at.desc()).limit(limit).offset(offset)
     result = await session.execute(stmt)
     return result.scalars().all()
 
 
-async def count_families_by_project(session: AsyncSession, *, project_id: uuid.UUID) -> int:
+async def count_families_by_project(
+    session: AsyncSession,
+    *,
+    project_id: uuid.UUID,
+    is_primary: Optional[bool] = None,
+    parent_id: Optional[uuid.UUID] = None,
+) -> int:
     stmt = select(func.count()).select_from(Family).where(Family.project_id == project_id)
+    if is_primary is not None:
+        val = "true" if is_primary else "false"
+        stmt = stmt.where(Family.metadata_json["extra"]["is_primary"].astext == val)
+    if parent_id is not None:
+        stmt = stmt.where(Family.metadata_json["extra"]["parent_family_id"].astext == str(parent_id))
     result = await session.execute(stmt)
     return int(result.scalar_one())
 

@@ -11,7 +11,6 @@ HEX_RE = re.compile(r"^[0-9a-fA-F]+$")
 
 
 class InitUploadRequest(BaseModel):
-    project_id: uuid.UUID
     original_filename: str = Field(min_length=1, max_length=255)
     size_bytes: int | None = Field(default=None, ge=0)
     sha256: str | None = Field(default=None, min_length=8, max_length=128)
