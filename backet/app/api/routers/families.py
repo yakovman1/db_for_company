@@ -19,6 +19,7 @@ from app.schemas.family import (
     InitUploadResponse,
     ListFamiliesResponse,
     MetadataRequest,
+    ThumbnailInitUploadResponse,
 )
 from app.services import auth as auth_service
 from app.services import families as family_service
@@ -129,6 +130,26 @@ async def get_thumbnail_url(
     return DownloadUrlResponse(
         presigned_get_url=url, expires_in_seconds=family_service.settings.presigned_get_expires
     )
+
+
+# ── Thumbnail upload (rev 5.1) ────────────────────────────────────────────────
+@router.post("/{family_id}/thumbnail/init-upload", response_model=ThumbnailInitUploadResponse)
+async def thumbnail_init_upload(
+    family_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    user: PluginUserContext = Depends(auth_service.get_plugin_user),
+) -> ThumbnailInitUploadResponse:
+    return await family_service.thumbnail_init_upload(user, family_id, session)
+
+
+@router.post("/{family_id}/thumbnail/complete", response_model=dict)
+async def thumbnail_complete(
+    family_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    user: PluginUserContext = Depends(auth_service.get_plugin_user),
+) -> dict:
+    await family_service.thumbnail_complete(user, family_id, session)
+    return {"ok": True}
 
 
 # ── Family card (опционально для клиента) — ПОСЛЕ всех специфичных ─────────────

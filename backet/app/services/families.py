@@ -77,7 +77,8 @@ async def init_upload(user: PluginUserContext, payload: InitUploadRequest, sessi
 
         if existing is not None:
             if payload.sha256 and existing.sha256 == payload.sha256:
-                thumb_key = _build_thumbnail_key(project_id, existing.id) if existing.is_primary else None
+                # Файл не изменился — но для host всё равно выдаём thumbnail presigned URL
+                thumb_key, thumb_url = _thumbnail_urls_for(project_id, existing.id, existing.is_primary)
                 return InitUploadResponse(
                     family_id=existing.id,
                     version=existing.version,
@@ -87,8 +88,8 @@ async def init_upload(user: PluginUserContext, payload: InitUploadRequest, sessi
                     object_key=existing.object_key,
                     presigned_put_url=None,
                     thumbnail_object_key=thumb_key,
-                    presigned_thumbnail_put_url=None,
-                    expires_in_seconds=0,
+                    presigned_thumbnail_put_url=thumb_url,
+                    expires_in_seconds=settings.presigned_put_expires if thumb_url else 0,
                 )
 
             object_key = _build_object_key(project_id, existing.id, payload.sha256, payload.original_filename, stable=True)
@@ -298,3 +299,31 @@ async def get_thumbnail_url(user: PluginUserContext, family_id: uuid.UUID, sessi
     if not head:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thumbnail not available")
     return s3_service.generate_get_url(thumb_key, expires_in=settings.presigned_get_expires)
+
+
+async def thumbnail_init_upload(user: PluginUserContext, family_id: uuid.UUID, session):
+    from app.schemas.family import ThumbnailInitUploadResponse
+    project_id = await _project_id_for_user(session, user)
+    family = await repo.get_family(session, family_id)
+    if not family:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Family not found")
+    _ensure_family_access(user, family, project_id)
+    thumb_key = _build_thumbnail_key(project_id, family.id)
+    url = s3_service.generate_put_url(thumb_key, expires_in=settings.presigned_put_expires, content_type="image/png")
+    return ThumbnailInitUploadResponse(
+        presigned_put_url=url,
+        thumbnail_object_key=thumb_key,
+        expires_in_seconds=settings.presigned_put_expires,
+    )
+
+
+async def thumbnail_complete(user: PluginUserContext, family_id: uuid.UUID, session) -> None:
+    project_id = await _project_id_for_user(session, user)
+    family = await repo.get_family(session, family_id)
+    if not family:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Family not found")
+    _ensure_family_access(user, family, project_id)
+    thumb_key = _build_thumbnail_key(project_id, family.id)
+    head = s3_service.head_object(thumb_key)
+    family.has_thumbnail = head is not None
+    await session.commit()

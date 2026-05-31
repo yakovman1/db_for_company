@@ -133,3 +133,9 @@ class FavoritesListResponse(BaseModel):
 class AddFavoriteRequest(BaseModel):
     family_id: uuid.UUID
 
+
+class ThumbnailInitUploadResponse(BaseModel):
+    presigned_put_url: str
+    thumbnail_object_key: str
+    expires_in_seconds: int
+
