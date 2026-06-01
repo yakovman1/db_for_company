@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     presigned_put_expires: int = Field(900, alias="PRESIGNED_PUT_EXPIRES")
     presigned_get_expires: int = Field(300, alias="PRESIGNED_GET_EXPIRES")
 
+    # Shared catalog
+    shared_catalog_company_id: str = Field("CATALOG", alias="SHARED_CATALOG_COMPANY_ID")
+
     # Logging
     log_level: str = Field("INFO", alias="LOG_LEVEL")
 

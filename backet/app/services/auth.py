@@ -50,15 +50,14 @@ async def authenticate(payload: AuthRequest, session: AsyncSession) -> AuthRespo
     if company is None or not company.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Company not found or inactive")
 
-    user_count = await companies_repo.count_company_users(session, company_id=payload.company_id)
-    if user_count > 0:
-        allowed = await companies_repo.is_windows_user_allowed(
-            session,
-            company_id=payload.company_id,
-            windows_user=payload.windows_user,
-        )
-        if not allowed:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Windows user is not allowed")
+    # Rev 7: всегда проверяем company_users (убрана проверка "if count > 0")
+    allowed = await companies_repo.is_windows_user_allowed(
+        session,
+        company_id=payload.company_id,
+        windows_user=payload.windows_user,
+    )
+    if not allowed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Windows user is not allowed")
 
     return _create_plugin_token(payload.company_id, payload.windows_user)
 
@@ -83,10 +82,22 @@ async def get_current_user(
 
 
 async def resolve_company_project_id(session: AsyncSession, company_id: str) -> uuid.UUID:
-    """Каталог семейств компании: project_id = companies.id (UUID)."""
+    """Устаревшее: использовать resolve_shared_catalog_project_id()."""
     company = await companies_repo.get_company(session, company_id=company_id)
     if company is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Company not found")
+    return company.id
+
+
+async def resolve_shared_catalog_project_id(session: AsyncSession) -> uuid.UUID:
+    """Rev 7: единый каталог — возвращает UUID компании-носителя SHARED_CATALOG_COMPANY_ID."""
+    catalog_id = settings.shared_catalog_company_id
+    company = await companies_repo.get_company(session, company_id=catalog_id)
+    if company is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Shared catalog company '{catalog_id}' not found in database",
+        )
     return company.id
 
 
@@ -105,14 +116,13 @@ async def get_plugin_user(
     if company is None or not company.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Company not found or inactive")
 
-    user_count = await companies_repo.count_company_users(session, company_id=str(company_id))
-    if user_count > 0:
-        allowed = await companies_repo.is_windows_user_allowed(
-            session,
-            company_id=str(company_id),
-            windows_user=str(windows_user),
-        )
-        if not allowed:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Windows user is not allowed")
+    # Rev 7: всегда проверяем company_users
+    allowed = await companies_repo.is_windows_user_allowed(
+        session,
+        company_id=str(company_id),
+        windows_user=str(windows_user),
+    )
+    if not allowed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Windows user is not allowed")
 
     return PluginUserContext(company_id=str(company_id), windows_user=str(windows_user))

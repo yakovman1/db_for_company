@@ -21,7 +21,8 @@ async def list_favorites(user: PluginUserContext, session: AsyncSession) -> Favo
 async def add_favorite(
     user: PluginUserContext, payload: AddFavoriteRequest, session: AsyncSession
 ) -> FavoriteItem:
-    project_id = await auth_service.resolve_company_project_id(session, user.company_id)
+    # Rev 7: проверяем принадлежность семейства к единому каталогу
+    project_id = await auth_service.resolve_shared_catalog_project_id(session)
     family = await repo.get_family(session, payload.family_id)
     if not family or family.project_id != project_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Family not found")

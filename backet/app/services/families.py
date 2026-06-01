@@ -25,8 +25,9 @@ logger = get_logger(__name__)
 settings = get_settings()
 
 
-async def _project_id_for_user(session, user: PluginUserContext) -> uuid.UUID:
-    return await auth_service.resolve_company_project_id(session, user.company_id)
+async def _catalog_project_id(session) -> uuid.UUID:
+    """Rev 7: единый каталог — project_id не зависит от JWT company_id."""
+    return await auth_service.resolve_shared_catalog_project_id(session)
 
 
 def _ensure_family_access(user: PluginUserContext, family: Family, project_id: uuid.UUID) -> None:
@@ -62,7 +63,7 @@ def _thumbnail_urls_for(project_id: uuid.UUID, family_id: uuid.UUID, is_primary:
 
 
 async def init_upload(user: PluginUserContext, payload: InitUploadRequest, session) -> InitUploadResponse:
-    project_id = await _project_id_for_user(session, user)
+    project_id = await _catalog_project_id(session)
     has_identity = payload.family_name is not None and payload.category is not None and payload.is_primary is not None
 
     if has_identity:
@@ -79,6 +80,8 @@ async def init_upload(user: PluginUserContext, payload: InitUploadRequest, sessi
             if payload.sha256 and existing.sha256 == payload.sha256:
                 # Файл не изменился — но для host всё равно выдаём thumbnail presigned URL
                 thumb_key, thumb_url = _thumbnail_urls_for(project_id, existing.id, existing.is_primary)
+                logger.info("init_upload_unchanged", family_id=str(existing.id), version=existing.version,
+                            company_id=user.company_id, windows_user=user.windows_user)
                 return InitUploadResponse(
                     family_id=existing.id,
                     version=existing.version,
@@ -103,6 +106,8 @@ async def init_upload(user: PluginUserContext, payload: InitUploadRequest, sessi
             )
             presigned_put_url = s3_service.generate_put_url(object_key, expires_in=settings.presigned_put_expires)
             thumb_key, thumb_url = _thumbnail_urls_for(project_id, family.id, payload.is_primary)
+            logger.info("init_upload_version", family_id=str(family.id), version=family.version,
+                        company_id=user.company_id, windows_user=user.windows_user)
             return InitUploadResponse(
                 family_id=family.id,
                 version=family.version,
@@ -135,6 +140,8 @@ async def init_upload(user: PluginUserContext, payload: InitUploadRequest, sessi
         )
         presigned_put_url = s3_service.generate_put_url(object_key, expires_in=settings.presigned_put_expires)
         thumb_key, thumb_url = _thumbnail_urls_for(project_id, family.id, payload.is_primary)
+        logger.info("init_upload_new", family_id=str(family.id),
+                    company_id=user.company_id, windows_user=user.windows_user)
         return InitUploadResponse(
             family_id=family.id,
             version=family.version,
@@ -195,7 +202,7 @@ def _flatten_parameters(metadata: FamilyMetadataPayload) -> tuple[List[dict], Li
 
 
 async def save_metadata(user: PluginUserContext, family_id: uuid.UUID, metadata: FamilyMetadataPayload, session) -> Family:
-    project_id = await _project_id_for_user(session, user)
+    project_id = await _catalog_project_id(session)
     family = await repo.get_family(session, family_id)
     if not family:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Family not found")
@@ -203,6 +210,16 @@ async def save_metadata(user: PluginUserContext, family_id: uuid.UUID, metadata:
     _ensure_family_access(user, family, project_id)
     params, type_values = _flatten_parameters(metadata)
     metadata_dict = metadata.model_dump()
+
+    # Rev 7: аудит — перезаписываем/дополняем extra из JWT (authoritative)
+    if "extra" not in metadata_dict or metadata_dict["extra"] is None:
+        metadata_dict["extra"] = {}
+    metadata_dict["extra"]["uploaded_by_company_id"] = user.company_id
+    metadata_dict["extra"]["uploaded_by_windows_user"] = user.windows_user
+    metadata_dict["extra"]["uploaded_at"] = datetime.now(timezone.utc).isoformat()
+
+    logger.info("save_metadata", family_id=str(family_id),
+                company_id=user.company_id, windows_user=user.windows_user)
     return await repo.update_metadata(
         session,
         family=family,
@@ -213,7 +230,7 @@ async def save_metadata(user: PluginUserContext, family_id: uuid.UUID, metadata:
 
 
 async def complete_upload(user: PluginUserContext, family_id: uuid.UUID, payload: CompleteUploadRequest, session) -> Family:
-    project_id = await _project_id_for_user(session, user)
+    project_id = await _catalog_project_id(session)
     family = await repo.get_family(session, family_id)
     if not family:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Family not found")
@@ -238,7 +255,7 @@ async def complete_upload(user: PluginUserContext, family_id: uuid.UUID, payload
 
     status_to_set = FamilyStatus.READY if head or payload.etag else FamilyStatus.UPLOADED
 
-    return await repo.mark_ready(
+    result = await repo.mark_ready(
         session,
         family=family,
         etag=etag,
@@ -247,10 +264,13 @@ async def complete_upload(user: PluginUserContext, family_id: uuid.UUID, payload
         has_thumbnail=has_thumbnail,
         status=status_to_set,
     )
+    logger.info("complete_upload", family_id=str(family_id), status=status_to_set.value, has_thumbnail=has_thumbnail,
+                company_id=user.company_id, windows_user=user.windows_user)
+    return result
 
 
 async def get_family(user: PluginUserContext, family_id: uuid.UUID, session) -> Family:
-    project_id = await _project_id_for_user(session, user)
+    project_id = await _catalog_project_id(session)
     family = await repo.get_family(session, family_id)
     if not family:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Family not found")
@@ -267,7 +287,7 @@ async def list_families(
     is_primary: bool | None = None,
     parent_id: uuid.UUID | None = None,
 ):
-    project_id = await _project_id_for_user(session, user)
+    project_id = await _catalog_project_id(session)
     families = await repo.list_families_by_project(
         session, project_id=project_id, limit=limit, offset=offset, is_primary=is_primary, parent_id=parent_id
     )
@@ -278,16 +298,18 @@ async def list_families(
 
 
 async def get_download_url(user: PluginUserContext, family_id: uuid.UUID, session) -> str:
-    project_id = await _project_id_for_user(session, user)
+    project_id = await _catalog_project_id(session)
     family = await repo.get_family(session, family_id)
     if not family:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Family not found")
     _ensure_family_access(user, family, project_id)
+    logger.info("download_url", family_id=str(family_id),
+                company_id=user.company_id, windows_user=user.windows_user)
     return s3_service.generate_get_url(family.object_key, expires_in=settings.presigned_get_expires)
 
 
 async def get_thumbnail_url(user: PluginUserContext, family_id: uuid.UUID, session) -> str:
-    project_id = await _project_id_for_user(session, user)
+    project_id = await _catalog_project_id(session)
     family = await repo.get_family(session, family_id)
     if not family:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Family not found")
@@ -303,7 +325,7 @@ async def get_thumbnail_url(user: PluginUserContext, family_id: uuid.UUID, sessi
 
 async def thumbnail_init_upload(user: PluginUserContext, family_id: uuid.UUID, session):
     from app.schemas.family import ThumbnailInitUploadResponse
-    project_id = await _project_id_for_user(session, user)
+    project_id = await _catalog_project_id(session)
     family = await repo.get_family(session, family_id)
     if not family:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Family not found")
@@ -318,7 +340,7 @@ async def thumbnail_init_upload(user: PluginUserContext, family_id: uuid.UUID, s
 
 
 async def thumbnail_complete(user: PluginUserContext, family_id: uuid.UUID, session) -> None:
-    project_id = await _project_id_for_user(session, user)
+    project_id = await _catalog_project_id(session)
     family = await repo.get_family(session, family_id)
     if not family:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Family not found")

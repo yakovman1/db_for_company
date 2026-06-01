@@ -23,7 +23,8 @@ async def list_project_families(
     session: AsyncSession = Depends(get_session),
     user: PluginUserContext = Depends(auth_service.get_plugin_user),
 ) -> ListFamiliesResponse:
-    company_project_id = await auth_service.resolve_company_project_id(session, user.company_id)
+    # Rev 7: legacy route разрешён только для shared_catalog_project_id
+    company_project_id = await auth_service.resolve_shared_catalog_project_id(session)
     if project_id != company_project_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project access denied")
 
