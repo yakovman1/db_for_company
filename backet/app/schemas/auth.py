@@ -28,3 +28,16 @@ class AuthResponse(BaseModel):
 
     access_token: str = Field(serialization_alias="accessToken")
     expires_in: int = Field(serialization_alias="expiresIn")
+
+
+# Rev 9: FamilyMang — auth без Company ID
+class FamilyAuthRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    windows_user: str = Field(alias="windowsUser", min_length=1)
+
+
+class FamilyPluginUserContext(BaseModel):
+    """JWT-контекст для FamilyMang: только windows_user (без company_id)."""
+    windows_user: str
+    company_id: str = ""  # пустая строка — placeholder; не используется для доступа к каталогу

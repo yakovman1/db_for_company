@@ -10,7 +10,7 @@ from app.core.config import get_settings
 from app.core.logging import get_logger
 import app.db.repositories as repo
 from app.db.models import Family, FamilyStatus
-from app.schemas.auth import PluginUserContext
+from app.schemas.auth import FamilyPluginUserContext
 from app.schemas.family import (
     CompleteUploadRequest,
     FamilyMetadataPayload,
@@ -30,7 +30,7 @@ async def _catalog_project_id(session) -> uuid.UUID:
     return await auth_service.resolve_shared_catalog_project_id(session)
 
 
-def _ensure_family_access(user: PluginUserContext, family: Family, project_id: uuid.UUID) -> None:
+def _ensure_family_access(user: FamilyPluginUserContext, family: Family, project_id: uuid.UUID) -> None:
     if family.project_id != project_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Family access denied")
 
@@ -62,7 +62,7 @@ def _thumbnail_urls_for(project_id: uuid.UUID, family_id: uuid.UUID, is_primary:
     return key, url
 
 
-async def init_upload(user: PluginUserContext, payload: InitUploadRequest, session) -> InitUploadResponse:
+async def init_upload(user: FamilyPluginUserContext, payload: InitUploadRequest, session) -> InitUploadResponse:
     project_id = await _catalog_project_id(session)
     has_identity = payload.family_name is not None and payload.category is not None and payload.is_primary is not None
 
@@ -201,7 +201,7 @@ def _flatten_parameters(metadata: FamilyMetadataPayload) -> tuple[List[dict], Li
     return params, type_values
 
 
-async def save_metadata(user: PluginUserContext, family_id: uuid.UUID, metadata: FamilyMetadataPayload, session) -> Family:
+async def save_metadata(user: FamilyPluginUserContext, family_id: uuid.UUID, metadata: FamilyMetadataPayload, session) -> Family:
     project_id = await _catalog_project_id(session)
     family = await repo.get_family(session, family_id)
     if not family:
@@ -229,7 +229,7 @@ async def save_metadata(user: PluginUserContext, family_id: uuid.UUID, metadata:
     )
 
 
-async def complete_upload(user: PluginUserContext, family_id: uuid.UUID, payload: CompleteUploadRequest, session) -> Family:
+async def complete_upload(user: FamilyPluginUserContext, family_id: uuid.UUID, payload: CompleteUploadRequest, session) -> Family:
     project_id = await _catalog_project_id(session)
     family = await repo.get_family(session, family_id)
     if not family:
@@ -269,7 +269,7 @@ async def complete_upload(user: PluginUserContext, family_id: uuid.UUID, payload
     return result
 
 
-async def get_family(user: PluginUserContext, family_id: uuid.UUID, session) -> Family:
+async def get_family(user: FamilyPluginUserContext, family_id: uuid.UUID, session) -> Family:
     project_id = await _catalog_project_id(session)
     family = await repo.get_family(session, family_id)
     if not family:
@@ -279,7 +279,7 @@ async def get_family(user: PluginUserContext, family_id: uuid.UUID, session) -> 
 
 
 async def list_families(
-    user: PluginUserContext,
+    user: FamilyPluginUserContext,
     limit: int,
     offset: int,
     session,
@@ -297,7 +297,7 @@ async def list_families(
     return families, total
 
 
-async def get_download_url(user: PluginUserContext, family_id: uuid.UUID, session) -> str:
+async def get_download_url(user: FamilyPluginUserContext, family_id: uuid.UUID, session) -> str:
     project_id = await _catalog_project_id(session)
     family = await repo.get_family(session, family_id)
     if not family:
@@ -308,7 +308,7 @@ async def get_download_url(user: PluginUserContext, family_id: uuid.UUID, sessio
     return s3_service.generate_get_url(family.object_key, expires_in=settings.presigned_get_expires)
 
 
-async def get_thumbnail_url(user: PluginUserContext, family_id: uuid.UUID, session) -> str:
+async def get_thumbnail_url(user: FamilyPluginUserContext, family_id: uuid.UUID, session) -> str:
     project_id = await _catalog_project_id(session)
     family = await repo.get_family(session, family_id)
     if not family:
@@ -323,7 +323,7 @@ async def get_thumbnail_url(user: PluginUserContext, family_id: uuid.UUID, sessi
     return s3_service.generate_get_url(thumb_key, expires_in=settings.presigned_get_expires)
 
 
-async def thumbnail_init_upload(user: PluginUserContext, family_id: uuid.UUID, session):
+async def thumbnail_init_upload(user: FamilyPluginUserContext, family_id: uuid.UUID, session):
     from app.schemas.family import ThumbnailInitUploadResponse
     project_id = await _catalog_project_id(session)
     family = await repo.get_family(session, family_id)
@@ -339,7 +339,7 @@ async def thumbnail_init_upload(user: PluginUserContext, family_id: uuid.UUID, s
     )
 
 
-async def thumbnail_complete(user: PluginUserContext, family_id: uuid.UUID, session) -> None:
+async def thumbnail_complete(user: FamilyPluginUserContext, family_id: uuid.UUID, session) -> None:
     project_id = await _catalog_project_id(session)
     family = await repo.get_family(session, family_id)
     if not family:

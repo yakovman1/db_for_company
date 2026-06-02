@@ -25,3 +25,10 @@ async def is_windows_user_allowed(session: AsyncSession, *, company_id: str, win
     )
     result = await session.execute(stmt)
     return result.scalar_one_or_none() is not None
+
+
+async def is_windows_user_in_whitelist(session: AsyncSession, *, windows_user: str) -> bool:
+    """Rev 9: проверяет наличие windows_user в company_users (любая компания)."""
+    stmt = select(CompanyUser).where(CompanyUser.windows_user == windows_user).limit(1)
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none() is not None

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
-from app.schemas.auth import PluginUserContext
+from app.schemas.auth import FamilyPluginUserContext
 from app.schemas.family import (
     AddFavoriteRequest,
     CompleteUploadRequest,
@@ -36,7 +36,7 @@ async def list_company_families(
     is_primary: Annotated[Optional[bool], Query(alias="is_primary")] = None,
     parent_id: Annotated[Optional[uuid.UUID], Query(alias="parent_id")] = None,
     session: AsyncSession = Depends(get_session),
-    user: PluginUserContext = Depends(auth_service.get_plugin_user),
+    user: FamilyPluginUserContext = Depends(auth_service.get_family_plugin_user),
 ) -> ListFamiliesResponse:
     families, total = await family_service.list_families(
         user, limit, offset, session, is_primary=is_primary, parent_id=parent_id
@@ -50,7 +50,7 @@ async def list_company_families(
 async def init_upload(
     payload: InitUploadRequest,
     session: AsyncSession = Depends(get_session),
-    user: PluginUserContext = Depends(auth_service.get_plugin_user),
+    user: FamilyPluginUserContext = Depends(auth_service.get_family_plugin_user),
 ) -> InitUploadResponse:
     return await family_service.init_upload(user, payload, session)
 
@@ -59,7 +59,7 @@ async def init_upload(
 @router.get("/favorites", response_model=FavoritesListResponse)
 async def list_favorites(
     session: AsyncSession = Depends(get_session),
-    user: PluginUserContext = Depends(auth_service.get_plugin_user),
+    user: FamilyPluginUserContext = Depends(auth_service.get_family_plugin_user),
 ) -> FavoritesListResponse:
     return await favorites_service.list_favorites(user, session)
 
@@ -68,7 +68,7 @@ async def list_favorites(
 async def add_favorite(
     payload: AddFavoriteRequest,
     session: AsyncSession = Depends(get_session),
-    user: PluginUserContext = Depends(auth_service.get_plugin_user),
+    user: FamilyPluginUserContext = Depends(auth_service.get_family_plugin_user),
 ) -> FavoriteItem:
     return await favorites_service.add_favorite(user, payload, session)
 
@@ -77,7 +77,7 @@ async def add_favorite(
 async def remove_favorite(
     family_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
-    user: PluginUserContext = Depends(auth_service.get_plugin_user),
+    user: FamilyPluginUserContext = Depends(auth_service.get_family_plugin_user),
 ) -> Response:
     await favorites_service.remove_favorite(user, family_id, session)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -89,7 +89,7 @@ async def save_metadata(
     family_id: uuid.UUID,
     payload: MetadataRequest,
     session: AsyncSession = Depends(get_session),
-    user: PluginUserContext = Depends(auth_service.get_plugin_user),
+    user: FamilyPluginUserContext = Depends(auth_service.get_family_plugin_user),
 ) -> dict:
     await family_service.save_metadata(user, family_id, payload.metadata, session)
     return {"ok": True}
@@ -100,7 +100,7 @@ async def complete_upload(
     family_id: uuid.UUID,
     payload: CompleteUploadRequest,
     session: AsyncSession = Depends(get_session),
-    user: PluginUserContext = Depends(auth_service.get_plugin_user),
+    user: FamilyPluginUserContext = Depends(auth_service.get_family_plugin_user),
 ) -> dict:
     await family_service.complete_upload(user, family_id, payload, session)
     return {"ok": True}
@@ -111,7 +111,7 @@ async def complete_upload(
 async def get_download_url(
     family_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
-    user: PluginUserContext = Depends(auth_service.get_plugin_user),
+    user: FamilyPluginUserContext = Depends(auth_service.get_family_plugin_user),
 ) -> DownloadUrlResponse:
     url = await family_service.get_download_url(user, family_id, session)
     return DownloadUrlResponse(
@@ -124,7 +124,7 @@ async def get_download_url(
 async def get_thumbnail_url(
     family_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
-    user: PluginUserContext = Depends(auth_service.get_plugin_user),
+    user: FamilyPluginUserContext = Depends(auth_service.get_family_plugin_user),
 ) -> DownloadUrlResponse:
     url = await family_service.get_thumbnail_url(user, family_id, session)
     return DownloadUrlResponse(
@@ -137,7 +137,7 @@ async def get_thumbnail_url(
 async def thumbnail_init_upload(
     family_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
-    user: PluginUserContext = Depends(auth_service.get_plugin_user),
+    user: FamilyPluginUserContext = Depends(auth_service.get_family_plugin_user),
 ) -> ThumbnailInitUploadResponse:
     return await family_service.thumbnail_init_upload(user, family_id, session)
 
@@ -146,7 +146,7 @@ async def thumbnail_init_upload(
 async def thumbnail_complete(
     family_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
-    user: PluginUserContext = Depends(auth_service.get_plugin_user),
+    user: FamilyPluginUserContext = Depends(auth_service.get_family_plugin_user),
 ) -> dict:
     await family_service.thumbnail_complete(user, family_id, session)
     return {"ok": True}
@@ -157,7 +157,7 @@ async def thumbnail_complete(
 async def get_family(
     family_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
-    user: PluginUserContext = Depends(auth_service.get_plugin_user),
+    user: FamilyPluginUserContext = Depends(auth_service.get_family_plugin_user),
 ) -> FamilySummary:
     family = await family_service.get_family(user, family_id, session)
     return FamilySummary.model_validate(family)
