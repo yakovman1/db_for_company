@@ -21,12 +21,9 @@ from app.schemas.family import (
     MetadataRequest,
     ThumbnailInitUploadResponse,
 )
-from app.schemas.familylogs import FamilyLogEntry, GetLogsResponse, PostLogsRequest
 from app.services import auth as auth_service
 from app.services import families as family_service
 from app.services import favorites as favorites_service
-from app.services import familylogs as log_service
-import app.db.repositories as repo
 
 router = APIRouter(prefix="/families", tags=["families"])
 
@@ -153,61 +150,6 @@ async def thumbnail_complete(
 ) -> dict:
     await family_service.thumbnail_complete(user, family_id, session)
     return {"ok": True}
-
-
-# ── Logs (rev 8) — ПЕРЕД /{family_id} ────────────────────────────────────────
-@router.post("/logs", status_code=status.HTTP_200_OK, response_model=dict)
-async def post_logs(
-    payload: PostLogsRequest,
-    session: AsyncSession = Depends(get_session),
-    user: PluginUserContext = Depends(auth_service.get_plugin_user),
-) -> dict:
-    """Приём клиентских событий (download_file, load_into_project, ошибки и т.п.)."""
-    for entry in payload.entries:
-        await log_service.log(
-            session,
-            action=entry.action,
-            outcome=entry.outcome,
-            source="client",
-            company_id=user.company_id,
-            windows_user=user.windows_user,
-            family_id=entry.family_id,
-            family_name=entry.family_name,
-            original_filename=entry.original_filename,
-            category=entry.category,
-            family_version=entry.family_version,
-            is_primary=entry.is_primary,
-            parent_family_id=entry.parent_family_id,
-            revit_project_name=entry.revit_project_name,
-            revit_project_path=entry.revit_project_path,
-            revit_document_kind=entry.revit_document_kind,
-            error_message=entry.error_message,
-            http_status=entry.http_status,
-            details=entry.details,
-        )
-    return {"ok": True, "accepted": len(payload.entries)}
-
-
-@router.get("/logs", response_model=GetLogsResponse)
-async def get_logs(
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    offset: Annotated[int, Query(ge=0)] = 0,
-    family_id: Annotated[Optional[uuid.UUID], Query()] = None,
-    action: Annotated[Optional[str], Query()] = None,
-    session: AsyncSession = Depends(get_session),
-    user: PluginUserContext = Depends(auth_service.get_plugin_user),
-) -> GetLogsResponse:
-    """Просмотр журнала — фильтр по текущему пользователю (company_id + windows_user из JWT)."""
-    rows = await repo.list_logs(
-        session,
-        company_id=user.company_id,
-        windows_user=user.windows_user,
-        family_id=family_id,
-        action=action,
-        limit=limit,
-        offset=offset,
-    )
-    return GetLogsResponse(items=[FamilyLogEntry.model_validate(r) for r in rows])
 
 
 # ── Family card (опционально для клиента) — ПОСЛЕ всех специфичных ─────────────

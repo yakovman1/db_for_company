@@ -18,7 +18,6 @@ from app.schemas.family import (
     InitUploadResponse,
 )
 from app.services import auth as auth_service
-from app.services import familylogs as log_service
 from app.services.s3 import s3_service
 from app.utils.filename import sanitize_filename
 
@@ -83,15 +82,6 @@ async def init_upload(user: PluginUserContext, payload: InitUploadRequest, sessi
                 thumb_key, thumb_url = _thumbnail_urls_for(project_id, existing.id, existing.is_primary)
                 logger.info("init_upload_unchanged", family_id=str(existing.id), version=existing.version,
                             company_id=user.company_id, windows_user=user.windows_user)
-                await log_service.log(
-                    session, action="upload_unchanged", outcome="skipped",
-                    company_id=user.company_id, windows_user=user.windows_user,
-                    family_id=existing.id, family_name=existing.family_name,
-                    original_filename=existing.original_filename, category=existing.category,
-                    family_version=existing.version, is_primary=existing.is_primary,
-                    catalog_project_id=project_id,
-                    details={"sha256": existing.sha256},
-                )
                 return InitUploadResponse(
                     family_id=existing.id,
                     version=existing.version,
@@ -118,15 +108,6 @@ async def init_upload(user: PluginUserContext, payload: InitUploadRequest, sessi
             thumb_key, thumb_url = _thumbnail_urls_for(project_id, family.id, payload.is_primary)
             logger.info("init_upload_version", family_id=str(family.id), version=family.version,
                         company_id=user.company_id, windows_user=user.windows_user)
-            await log_service.log(
-                session, action="upload_init", outcome="success",
-                company_id=user.company_id, windows_user=user.windows_user,
-                family_id=family.id, family_name=family.family_name,
-                original_filename=family.original_filename, category=family.category,
-                family_version=family.version, is_primary=family.is_primary,
-                catalog_project_id=project_id,
-                details={"is_new": False, "sha256": payload.sha256},
-            )
             return InitUploadResponse(
                 family_id=family.id,
                 version=family.version,
@@ -161,16 +142,6 @@ async def init_upload(user: PluginUserContext, payload: InitUploadRequest, sessi
         thumb_key, thumb_url = _thumbnail_urls_for(project_id, family.id, payload.is_primary)
         logger.info("init_upload_new", family_id=str(family.id),
                     company_id=user.company_id, windows_user=user.windows_user)
-        await log_service.log(
-            session, action="upload_init", outcome="success",
-            company_id=user.company_id, windows_user=user.windows_user,
-            family_id=family.id, family_name=family.family_name,
-            original_filename=family.original_filename, category=family.category,
-            family_version=family.version, is_primary=family.is_primary,
-            parent_family_id=payload.parent_family_id,
-            catalog_project_id=project_id,
-            details={"is_new": True, "sha256": payload.sha256},
-        )
         return InitUploadResponse(
             family_id=family.id,
             version=family.version,
@@ -249,22 +220,13 @@ async def save_metadata(user: PluginUserContext, family_id: uuid.UUID, metadata:
 
     logger.info("save_metadata", family_id=str(family_id),
                 company_id=user.company_id, windows_user=user.windows_user)
-    result = await repo.update_metadata(
+    return await repo.update_metadata(
         session,
         family=family,
         metadata_json=metadata_dict,
         parameters=params,
         type_values=type_values,
     )
-    await log_service.log(
-        session, action="upload_metadata", outcome="success",
-        company_id=user.company_id, windows_user=user.windows_user,
-        family_id=family.id, family_name=family.family_name,
-        original_filename=family.original_filename, category=family.category,
-        family_version=family.version, is_primary=family.is_primary,
-        catalog_project_id=project_id,
-    )
-    return result
 
 
 async def complete_upload(user: PluginUserContext, family_id: uuid.UUID, payload: CompleteUploadRequest, session) -> Family:
@@ -304,15 +266,6 @@ async def complete_upload(user: PluginUserContext, family_id: uuid.UUID, payload
     )
     logger.info("complete_upload", family_id=str(family_id), status=status_to_set.value, has_thumbnail=has_thumbnail,
                 company_id=user.company_id, windows_user=user.windows_user)
-    await log_service.log(
-        session, action="upload_complete", outcome="success",
-        company_id=user.company_id, windows_user=user.windows_user,
-        family_id=result.id, family_name=result.family_name,
-        original_filename=result.original_filename, category=result.category,
-        family_version=result.version, is_primary=result.is_primary,
-        catalog_project_id=project_id,
-        details={"has_thumbnail": has_thumbnail, "status": status_to_set.value},
-    )
     return result
 
 
@@ -352,14 +305,6 @@ async def get_download_url(user: PluginUserContext, family_id: uuid.UUID, sessio
     _ensure_family_access(user, family, project_id)
     logger.info("download_url", family_id=str(family_id),
                 company_id=user.company_id, windows_user=user.windows_user)
-    await log_service.log(
-        session, action="download_request", outcome="success",
-        company_id=user.company_id, windows_user=user.windows_user,
-        family_id=family.id, family_name=family.family_name,
-        original_filename=family.original_filename, category=family.category,
-        family_version=family.version, is_primary=family.is_primary,
-        catalog_project_id=project_id,
-    )
     return s3_service.generate_get_url(family.object_key, expires_in=settings.presigned_get_expires)
 
 
