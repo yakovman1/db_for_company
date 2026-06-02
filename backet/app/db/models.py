@@ -243,6 +243,51 @@ class UserFavorite(Base):
     )
 
 
+class FamilyLog(Base):
+    __tablename__ = "familylogs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    company_id: Mapped[str] = mapped_column(Text, nullable=False)
+    windows_user: Mapped[str] = mapped_column(Text, nullable=False)
+
+    action: Mapped[str] = mapped_column(Text, nullable=False)
+    outcome: Mapped[str] = mapped_column(Text, nullable=False, default="success")
+    source: Mapped[str] = mapped_column(Text, nullable=False, default="server")
+
+    family_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA_FAMILYMANAGER}.families.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    family_name: Mapped[str | None] = mapped_column(Text)
+    original_filename: Mapped[str | None] = mapped_column(Text)
+    category: Mapped[str | None] = mapped_column(Text)
+    family_version: Mapped[int | None] = mapped_column(Integer)
+    is_primary: Mapped[bool | None] = mapped_column(Boolean)
+    parent_family_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+
+    catalog_project_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+
+    revit_project_name: Mapped[str | None] = mapped_column(Text)
+    revit_project_path: Mapped[str | None] = mapped_column(Text)
+    revit_document_kind: Mapped[str | None] = mapped_column(Text)
+
+    error_message: Mapped[str | None] = mapped_column(Text)
+    http_status: Mapped[int | None] = mapped_column(Integer)
+
+    details: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+
+    __table_args__ = (
+        Index("ix_familylogs_created_at", "created_at"),
+        Index("ix_familylogs_company_user", "company_id", "windows_user", "created_at"),
+        Index("ix_familylogs_family_id", "family_id", "created_at"),
+        Index("ix_familylogs_action", "action", "created_at"),
+        {"schema": SCHEMA_FAMILYMANAGER},
+    )
+
+
 class UserProject(Base):
     __tablename__ = "user_projects"
 

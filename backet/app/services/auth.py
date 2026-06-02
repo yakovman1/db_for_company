@@ -14,6 +14,7 @@ from app.db.repositories import companies as companies_repo
 from app.db.repositories.user_projects import get_user_projects
 from app.db.session import get_session
 from app.schemas.auth import AuthRequest, AuthResponse, PluginUserContext, UserContext
+from app.services import familylogs as log_service
 
 logger = get_logger(__name__)
 settings = get_settings()
@@ -48,6 +49,11 @@ def _create_plugin_token(company_id: str, windows_user: str) -> AuthResponse:
 async def authenticate(payload: AuthRequest, session: AsyncSession) -> AuthResponse:
     company = await companies_repo.get_company(session, company_id=payload.company_id)
     if company is None or not company.is_active:
+        await log_service.log(
+            session, action="auth_login_failed", outcome="error",
+            company_id=payload.company_id, windows_user=payload.windows_user,
+            http_status=401, error_message="Company not found or inactive",
+        )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Company not found or inactive")
 
     # Rev 7: всегда проверяем company_users (убрана проверка "if count > 0")
@@ -57,9 +63,19 @@ async def authenticate(payload: AuthRequest, session: AsyncSession) -> AuthRespo
         windows_user=payload.windows_user,
     )
     if not allowed:
+        await log_service.log(
+            session, action="auth_login_failed", outcome="error",
+            company_id=payload.company_id, windows_user=payload.windows_user,
+            http_status=403, error_message="Windows user is not allowed",
+        )
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Windows user is not allowed")
 
-    return _create_plugin_token(payload.company_id, payload.windows_user)
+    result = _create_plugin_token(payload.company_id, payload.windows_user)
+    await log_service.log(
+        session, action="auth_login", outcome="success",
+        company_id=payload.company_id, windows_user=payload.windows_user,
+    )
+    return result
 
 
 async def get_current_user(

@@ -1,3 +1,4 @@
+from app.db.repositories.familylogs import insert_log, list_logs
 from app.db.repositories.families import (
     count_families_by_project,
     create_family,
@@ -32,5 +33,7 @@ __all__ = [
     "get_user_projects",
     "list_openings_by_model",
     "add_opening_history",
+    "insert_log",
+    "list_logs",
 ]
 
