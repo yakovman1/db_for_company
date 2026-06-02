@@ -202,3 +202,18 @@ async def update_object_key(
     await session.execute(stmt)
     await session.commit()
 
+
+async def list_nested_by_parent(
+    session: AsyncSession, *, parent_family_id: uuid.UUID
+) -> list[Family]:
+    """Возвращает все nested-семейства с parent_family_id = данный family_id."""
+    stmt = select(Family).where(Family.parent_family_id == parent_family_id)
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def delete_family_record(session: AsyncSession, *, family: Family) -> None:
+    """Удаляет запись семейства из БД (FK cascade удалит параметры, типы, избранное)."""
+    await session.delete(family)
+    await session.commit()
+

@@ -1,10 +1,12 @@
 from app.db.repositories.families import (
     count_families_by_project,
     create_family,
+    delete_family_record,
     find_family_by_identity,
     get_family,
     increment_version,
     list_families_by_project,
+    list_nested_by_parent,
     mark_ready,
     update_metadata,
     update_object_key,
@@ -32,5 +34,7 @@ __all__ = [
     "get_user_projects",
     "list_openings_by_model",
     "add_opening_history",
+    "list_nested_by_parent",
+    "delete_family_record",
 ]
 

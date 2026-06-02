@@ -70,5 +70,14 @@ class S3Service:
             logger.warning("s3_head_object_error", error=str(exc))
             return None
 
+    def delete_object(self, object_key: str) -> bool:
+        """Удаляет объект из S3. Возвращает True если успешно, False при ошибке."""
+        try:
+            self.client.delete_object(Bucket=self.bucket, Key=object_key)
+            return True
+        except ClientError as exc:
+            logger.warning("s3_delete_object_error", object_key=object_key, error=str(exc))
+            return False
+
 
 s3_service = S3Service()

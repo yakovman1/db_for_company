@@ -152,6 +152,18 @@ async def thumbnail_complete(
     return {"ok": True}
 
 
+# ── Delete family (rev 11) ────────────────────────────────────────────────────
+@router.delete("/{family_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_family(
+    family_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    user: FamilyPluginUserContext = Depends(auth_service.get_family_plugin_user),
+) -> Response:
+    """Rev 11: удаление host-семейства (+ все nested) + S3 объекты."""
+    await family_service.delete_family(user, family_id, session)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 # ── Family card (опционально для клиента) — ПОСЛЕ всех специфичных ─────────────
 @router.get("/{family_id}", response_model=FamilySummary)
 async def get_family(

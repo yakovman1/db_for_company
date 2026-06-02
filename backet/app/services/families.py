@@ -349,3 +349,32 @@ async def thumbnail_complete(user: FamilyPluginUserContext, family_id: uuid.UUID
     head = s3_service.head_object(thumb_key)
     family.has_thumbnail = head is not None
     await session.commit()
+
+
+def _delete_s3_for_family(project_id: uuid.UUID, family: Family) -> None:
+    """Удаляет family.rfa и thumbnail.png из S3 (best-effort)."""
+    s3_service.delete_object(family.object_key)
+    if family.has_thumbnail:
+        s3_service.delete_object(_build_thumbnail_key(project_id, family.id))
+
+
+async def delete_family(user: FamilyPluginUserContext, family_id: uuid.UUID, session) -> None:
+    """Rev 11: удаление host + всех nested семейств + S3 объектов."""
+    project_id = await _catalog_project_id(session)
+    family = await repo.get_family(session, family_id)
+    if not family:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Family not found")
+    _ensure_family_access(user, family, project_id)
+
+    # Если это host — удаляем сначала все nested
+    if family.is_primary:
+        nested_list = await repo.list_nested_by_parent(session, parent_family_id=family.id)
+        for nested in nested_list:
+            _delete_s3_for_family(project_id, nested)
+            await repo.delete_family_record(session, family=nested)
+
+    # Удаляем сам файл и запись
+    _delete_s3_for_family(project_id, family)
+    await repo.delete_family_record(session, family=family)
+    logger.info("family_deleted", family_id=str(family_id), is_primary=family.is_primary,
+                windows_user=user.windows_user)
