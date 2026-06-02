@@ -359,7 +359,10 @@ def _delete_s3_for_family(project_id: uuid.UUID, family: Family) -> None:
 
 
 async def delete_family(user: FamilyPluginUserContext, family_id: uuid.UUID, session) -> None:
-    """Rev 11: удаление host + всех nested семейств + S3 объектов."""
+    """Rev 11/12: удаление host + всех nested семейств + S3 объектов. Требует delete_families."""
+    if "delete_families" not in user.permissions:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission 'delete_families' required")
+
     project_id = await _catalog_project_id(session)
     family = await repo.get_family(session, family_id)
     if not family:

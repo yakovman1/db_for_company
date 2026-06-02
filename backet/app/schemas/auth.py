@@ -28,6 +28,7 @@ class AuthResponse(BaseModel):
 
     access_token: str = Field(serialization_alias="accessToken")
     expires_in: int = Field(serialization_alias="expiresIn")
+    permissions: List[str] = Field(default_factory=list, serialization_alias="permissions")
 
 
 # Rev 9: FamilyMang — auth без Company ID
@@ -41,3 +42,4 @@ class FamilyPluginUserContext(BaseModel):
     """JWT-контекст для FamilyMang: только windows_user (без company_id)."""
     windows_user: str
     company_id: str = ""  # пустая строка — placeholder; не используется для доступа к каталогу
+    permissions: List[str] = Field(default_factory=list)  # Rev 12: права из family_user_permissions

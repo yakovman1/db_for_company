@@ -137,32 +137,37 @@ async def get_plugin_user(
 
 # ── Rev 9: FamilyMang user-only auth ──────────────────────────────────────────
 
-def _create_family_token(windows_user: str) -> AuthResponse:
-    """JWT только с windows_user — без company_id."""
+def _create_family_token(windows_user: str, permissions: list[str]) -> AuthResponse:
+    """JWT только с windows_user и permissions — без company_id."""
     expires_in = settings.jwt_expires_seconds
     payload = {
         "windows_user": windows_user,
+        "permissions": permissions,
         "exp": datetime.now(timezone.utc) + timedelta(seconds=expires_in),
     }
     access_token = jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
-    return AuthResponse(access_token=access_token, expires_in=expires_in)
+    return AuthResponse(access_token=access_token, expires_in=expires_in, permissions=permissions)
 
 
 async def authenticate_family_user(payload: FamilyAuthRequest, session: AsyncSession) -> AuthResponse:
-    """Rev 9: вход без Company ID — только windows_user в whitelist."""
+    """Rev 9/12: вход без Company ID — только windows_user в whitelist. Возвращает permissions."""
     allowed = await companies_repo.is_windows_user_in_whitelist(
         session, windows_user=payload.windows_user
     )
     if not allowed:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Windows user is not allowed")
-    return _create_family_token(payload.windows_user)
+
+    permissions = await companies_repo.get_user_permissions(
+        session, windows_user=payload.windows_user
+    )
+    return _create_family_token(payload.windows_user, permissions)
 
 
 async def get_family_plugin_user(
     authorization: Annotated[str | None, Header(alias="Authorization")],
     session: AsyncSession = Depends(get_session),
 ) -> FamilyPluginUserContext:
-    """Rev 9: dependency для /families/* — принимает FamilyMang JWT (без company_id)."""
+    """Rev 9/12: dependency для /families/* — принимает FamilyMang JWT; читает permissions из токена."""
     token_payload = _decode_bearer_token(authorization)
 
     windows_user = token_payload.get("windows_user")
@@ -175,4 +180,5 @@ async def get_family_plugin_user(
     if not allowed:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Windows user is not allowed")
 
-    return FamilyPluginUserContext(windows_user=str(windows_user))
+    permissions: list[str] = token_payload.get("permissions") or []
+    return FamilyPluginUserContext(windows_user=str(windows_user), permissions=permissions)

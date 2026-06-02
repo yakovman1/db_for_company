@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Company, CompanyUser
@@ -32,3 +32,12 @@ async def is_windows_user_in_whitelist(session: AsyncSession, *, windows_user: s
     stmt = select(CompanyUser).where(CompanyUser.windows_user == windows_user).limit(1)
     result = await session.execute(stmt)
     return result.scalar_one_or_none() is not None
+
+
+async def get_user_permissions(session: AsyncSession, *, windows_user: str) -> list[str]:
+    """Rev 12: возвращает список прав из family_user_permissions."""
+    stmt = text(
+        "SELECT permission FROM atptlp_info.family_user_permissions WHERE windows_user = :u"
+    )
+    result = await session.execute(stmt, {"u": windows_user})
+    return [row[0] for row in result.fetchall()]
