@@ -7,8 +7,10 @@ Backend для Revit-плагинов: загрузка семейств (`.rfa`
 ## Stack
 
 - FastAPI 0.110 (Python 3.12)
-- Postgres 16 (async SQLAlchemy + asyncpg)
-- MinIO / AWS S3 (boto3, presigned URL)
+- Postgres 18 (async SQLAlchemy + asyncpg)
+- Apache Airflow 3.2
+- Apache Superset 6.1
+- RustFS / AWS S3-compatible storage (boto3, presigned URL)
 - JWT (python-jose, HS256)
 - structlog (JSON)
 
@@ -16,7 +18,7 @@ Backend для Revit-плагинов: загрузка семейств (`.rfa`
 
 ```bash
 cp env.example .env
-docker-compose up --build backend postgres minio minio-create-buckets
+docker compose up --build backend postgres rustfs rustfs-create-buckets
 ```
 
 | Сервис | URL |
@@ -24,7 +26,9 @@ docker-compose up --build backend postgres minio minio-create-buckets
 | API | http://localhost:8000 |
 | Swagger | http://localhost:8000/docs |
 | Postgres | localhost:5432 |
-| MinIO | http://localhost:9000 (console :9001) |
+| RustFS | http://localhost:9000 (console :9001) |
+| Airflow | http://localhost:8080 |
+| Superset | http://localhost:8088 |
 
 Compose создаёт bucket `${MINIO_BUCKET_FAMILIES}`.
 
@@ -35,8 +39,11 @@ Compose создаёт bucket `${MINIO_BUCKET_FAMILIES}`.
 | Группа | Переменные |
 |--------|------------|
 | Database | `DATABASE_URL` |
-| MinIO | `MINIO_ENDPOINT`, `MINIO_PUBLIC_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET_FAMILIES`, `MINIO_REGION`, `MINIO_USE_SSL` |
+| RustFS | `RUSTFS_ACCESS_KEY`, `RUSTFS_SECRET_KEY`, `RUSTFS_VOLUMES`, `RUSTFS_ADDRESS`, `RUSTFS_CONSOLE_ADDRESS` |
+| S3-compatible backend | `MINIO_ENDPOINT`, `MINIO_PUBLIC_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET_FAMILIES`, `MINIO_REGION`, `MINIO_USE_SSL`; `S3_*` aliases are also supported |
 | JWT | `JWT_SECRET`, `JWT_ALGORITHM`, `JWT_EXPIRES_SECONDS` |
+| Airflow | `AIRFLOW_ADMIN_USER`, `AIRFLOW_ADMIN_PASSWORD`, `AIRFLOW_ADMIN_EMAIL`, `AIRFLOW_API_AUTH_JWT_SECRET` |
+| Superset | `SUPERSET_ADMIN_USER`, `SUPERSET_ADMIN_PASSWORD`, `SUPERSET_ADMIN_EMAIL`, `SUPERSET_SECRET_KEY`; metadata DB uses Postgres database `superset` |
 | Presigned TTL | `PRESIGNED_PUT_EXPIRES` (900), `PRESIGNED_GET_EXPIRES` (300) |
 | Logging | `LOG_LEVEL` |
 
@@ -54,6 +61,26 @@ docker exec -it company_postgres psql -U families -d families -f /path/to/001_in
 | `002_openings.sql` | `ATPTLP_openmodels` — openings, opening_history |
 | `003_companies.sql` | `atptlp_info` — companies, company_users |
 | `004_openings_content_hash.sql` | колонка `content_hash` |
+
+## MinIO to RustFS data migration
+
+The compose file keeps the legacy `minio_data` volume for rollback. Do not use `docker compose down -v` during the migration window.
+
+Run the S3-level mirror from the old MinIO volume into RustFS:
+
+```bash
+./scripts/migrate_minio_to_rustfs.sh
+```
+
+The script starts a temporary RustFS container inside the Docker network without publishing host ports, mirrors from `MIGRATION_MINIO_ENDPOINT` (default: `http://minio:9000`), and removes only temporary containers. It does not stop Postgres/Airflow/Superset and does not remove volumes.
+
+After migration, run the S3 smoke test:
+
+```bash
+./scripts/smoke_rustfs_s3.sh
+```
+
+The smoke test verifies presigned PUT, `HeadObject`, presigned GET, and `DeleteObject` against the configured RustFS endpoint.
 
 ## Auth
 

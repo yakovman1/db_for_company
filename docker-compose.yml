@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   setup-folders:
     image: alpine:latest
@@ -13,16 +11,13 @@ services:
       - mkdir -p /infra/airflow/dags /infra/airflow/logs /infra/airflow/plugins /infra/superset/conf
 
   postgres:
-    image: postgres:16
+    image: postgres:18.4
     container_name: company_postgres
     restart: unless-stopped
     env_file:
       - .env
-    environment:
-      PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
-      - ./data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./data_pg18:/var/lib/postgresql
     ports:
       - '5432:5432'
     healthcheck:
@@ -37,51 +32,114 @@ services:
     container_name: company_redis
     restart: unless-stopped
 
-  minio:
-    image: quay.io/minio/minio:latest
-    container_name: minio
-    command: server /data --console-address ":9001"
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: rustfs
     restart: unless-stopped
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY}
+      RUSTFS_VOLUMES: ${RUSTFS_VOLUMES:-/data}
+      RUSTFS_ADDRESS: ${RUSTFS_ADDRESS:-0.0.0.0:9000}
+      RUSTFS_CONSOLE_ADDRESS: ${RUSTFS_CONSOLE_ADDRESS:-0.0.0.0:9001}
+      RUSTFS_CONSOLE_ENABLE: ${RUSTFS_CONSOLE_ENABLE:-true}
+      RUSTFS_CORS_ALLOWED_ORIGINS: ${RUSTFS_CORS_ALLOWED_ORIGINS:-*}
+      RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS: ${RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS:-*}
     ports:
       - "9000:9000"  # API
       - "9001:9001"  # Web-консоль
     volumes:
-      - minio_data:/data
+      - rustfs_data:/data
 
-  minio-create-buckets:
+  rustfs-create-buckets:
     image: quay.io/minio/mc:latest
-    container_name: minio-create-buckets
+    container_name: rustfs-create-buckets
     depends_on:
-      - minio
+      - rustfs
     entrypoint: >
       /bin/sh -c "
-      mc alias set local http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD} &&
+      mc alias set local http://rustfs:9000 ${RUSTFS_ACCESS_KEY} ${RUSTFS_SECRET_KEY} &&
       mc mb -p local/${MINIO_BUCKET_FAMILIES} || true &&
       mc mb -p local/${MINIO_BUCKET_PREVIEW} || true &&
       exit 0
       "
+
+  rustfs-migration:
+    image: rustfs/rustfs:latest
+    container_name: rustfs-migration
+    restart: "no"
+    profiles:
+      - migration
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY}
+      RUSTFS_VOLUMES: ${RUSTFS_VOLUMES:-/data}
+      RUSTFS_ADDRESS: ${RUSTFS_ADDRESS:-0.0.0.0:9000}
+      RUSTFS_CONSOLE_ADDRESS: ${RUSTFS_CONSOLE_ADDRESS:-0.0.0.0:9001}
+      RUSTFS_CONSOLE_ENABLE: ${RUSTFS_CONSOLE_ENABLE:-true}
+      RUSTFS_CORS_ALLOWED_ORIGINS: ${RUSTFS_CORS_ALLOWED_ORIGINS:-*}
+      RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS: ${RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS:-*}
+    volumes:
+      - rustfs_data:/data
+
+  minio-old:
+    image: quay.io/minio/minio:latest
+    container_name: minio-old
+    command: server /data --console-address ":9001"
+    restart: "no"
+    profiles:
+      - migration-legacy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "9100:9000"  # Legacy MinIO API for migration only
+      - "9101:9001"  # Legacy MinIO console for migration only
+    volumes:
+      - minio_data:/data
+
+  migrate-minio-to-rustfs:
+    image: quay.io/minio/mc:latest
+    container_name: migrate-minio-to-rustfs
+    depends_on:
+      - rustfs-migration
+    profiles:
+      - migration
+    environment:
+      MIGRATION_MINIO_ENDPOINT: ${MIGRATION_MINIO_ENDPOINT:-http://minio:9000}
+      MIGRATION_RUSTFS_ENDPOINT: http://rustfs-migration:9000
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set minio-old $$MIGRATION_MINIO_ENDPOINT ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD}; do sleep 2; done &&
+      until mc alias set rustfs-new $$MIGRATION_RUSTFS_ENDPOINT ${RUSTFS_ACCESS_KEY} ${RUSTFS_SECRET_KEY}; do sleep 2; done &&
+      mc mb -p rustfs-new/${MINIO_BUCKET_FAMILIES} || true &&
+      mc mb -p rustfs-new/${MINIO_BUCKET_PREVIEW} || true &&
+      mc mirror --overwrite minio-old/${MINIO_BUCKET_FAMILIES} rustfs-new/${MINIO_BUCKET_FAMILIES} &&
+      mc mirror --overwrite minio-old/${MINIO_BUCKET_PREVIEW} rustfs-new/${MINIO_BUCKET_PREVIEW}
+      "
 # 5. AIRFLOW (Инициализация таблиц и админа)
   airflow-init:
-    image: apache/airflow:2.8.1
+    image: apache/airflow:3.2.2
     depends_on:
       postgres: { condition: service_healthy }
     env_file: .env
     environment:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
+      AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_API_AUTH_JWT_SECRET}
     entrypoint: /bin/bash
     command:
       - -c
       - |
         airflow db migrate
-        airflow users create --username ${AIRFLOW_ADMIN_USER} --firstname Admin --lastname Admin --role Admin --email ${AIRFLOW_ADMIN_EMAIL} --password ${AIRFLOW_ADMIN_PASSWORD}
+        airflow users create --username ${AIRFLOW_ADMIN_USER} --firstname Admin --lastname Admin --role Admin --email ${AIRFLOW_ADMIN_EMAIL} --password ${AIRFLOW_ADMIN_PASSWORD} || true
 
-  # 6. AIRFLOW (Веб-интерфейс)
-  airflow-webserver:
-    image: apache/airflow:2.8.1
-    container_name: airflow_webserver
+  # 6. AIRFLOW (API server + UI)
+  airflow-api-server:
+    image: apache/airflow:3.2.2
+    container_name: airflow_api_server
     restart: unless-stopped
     depends_on:
       airflow-init: { condition: service_completed_successfully }
@@ -91,16 +149,19 @@ services:
     environment:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/airflow
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
+      AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_API_AUTH_JWT_SECRET}
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/logs:/opt/airflow/logs
     ports:
       - "8080:8080"
-    command: webserver
+    command: api-server
 
   # 7. AIRFLOW (Планировщик)
   airflow-scheduler:
-    image: apache/airflow:2.8.1
+    image: apache/airflow:3.2.2
     container_name: airflow_scheduler
     restart: unless-stopped
     depends_on:
@@ -109,30 +170,61 @@ services:
     environment:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/airflow
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
+      AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_API_AUTH_JWT_SECRET}
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/logs:/opt/airflow/logs
     command: scheduler
 
+  airflow-dag-processor:
+    image: apache/airflow:3.2.2
+    container_name: airflow_dag_processor
+    restart: unless-stopped
+    depends_on:
+      airflow-init: { condition: service_completed_successfully }
+    env_file: .env
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
+      AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_API_AUTH_JWT_SECRET}
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+    command: dag-processor
+
   # 8. SUPERSET (Инициализация)
   superset-init:
-    image: apache/superset:latest
+    build:
+      context: ./config
+      dockerfile: Dockerfile.superset
+    image: company-superset:6.1.0
     depends_on:
       postgres: { condition: service_healthy }
     env_file: .env
     environment:
-      SQLALCHEMY_DATABASE_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/superset
+      SUPERSET_CONFIG_PATH: /app/pythonpath/superset_config.py
+      SQLALCHEMY_DATABASE_URI: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/superset
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY}
+    volumes:
+      - ./config/superset_config.py:/app/pythonpath/superset_config.py:ro
     entrypoint: /bin/bash
     command:
       - -c
       - |
         superset db upgrade
-        superset fab create-admin --username ${SUPERSET_ADMIN_USER} --firstname Admin --lastname Admin --email ${SUPERSET_ADMIN_EMAIL} --password ${SUPERSET_ADMIN_PASSWORD}
+        superset fab create-admin --username ${SUPERSET_ADMIN_USER} --firstname Admin --lastname Admin --email ${SUPERSET_ADMIN_EMAIL} --password ${SUPERSET_ADMIN_PASSWORD} || true
         superset init
 
   # 9. SUPERSET (Веб-интерфейс)
   superset:
-    image: apache/superset:latest
+    build:
+      context: ./config
+      dockerfile: Dockerfile.superset
+    image: company-superset:6.1.0
     container_name: superset
     restart: unless-stopped
     depends_on:
@@ -142,10 +234,13 @@ services:
         condition: service_completed_successfully
     env_file: .env
     environment:
-      SQLALCHEMY_DATABASE_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/superset
+      SUPERSET_CONFIG_PATH: /app/pythonpath/superset_config.py
+      SQLALCHEMY_DATABASE_URI: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/superset
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY}
       SECRET_KEY: ${SUPERSET_SECRET_KEY}
     volumes:
       - superset_home:/app/superset_home
+      - ./config/superset_config.py:/app/pythonpath/superset_config.py:ro
     ports:
       - "8088:8088"
 
@@ -153,7 +248,7 @@ services:
     build: ./backet
     depends_on:
       - postgres
-      - minio
+      - rustfs
     env_file:
       - .env
     environment:
@@ -165,6 +260,8 @@ services:
     ports:
       - "8000:8000"
 volumes:
+  rustfs_data:
+    driver: local
   minio_data:
     driver: local
   superset_home:
