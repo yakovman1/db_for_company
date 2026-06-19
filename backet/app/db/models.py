@@ -31,6 +31,7 @@ class Base(DeclarativeBase):
 SCHEMA_FAMILYMANAGER = "ATPTLP_familymanager"
 SCHEMA_OPENMODELS = "ATPTLP_openmodels"
 SCHEMA_INFO = "atptlp_info"
+SCHEMA_STG_BIM = "stg_bim"
 
 
 class FamilyStatus(str, PyEnum):
@@ -196,6 +197,87 @@ class OpeningHistory(Base):
     opening: Mapped[Opening] = relationship(back_populates="history")
 
     __table_args__ = (Index("ix_opening_history_opening_id", "opening_id"), {"schema": SCHEMA_OPENMODELS})
+
+
+class BimdataSnapshotStatus(str, PyEnum):
+    CREATED = "created"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class BimdataSnapshot(Base):
+    __tablename__ = "model_snapshots"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    company_id: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by_windows_user: Mapped[str] = mapped_column(Text, nullable=False)
+    schema_version: Mapped[str] = mapped_column(Text, nullable=False)
+    snapshot_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    model_name: Mapped[str] = mapped_column(Text, nullable=False)
+    revit_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    pbp_x: Mapped[float | None] = mapped_column(Float)
+    pbp_y: Mapped[float | None] = mapped_column(Float)
+    pbp_z: Mapped[float | None] = mapped_column(Float)
+    pbp_angle: Mapped[float | None] = mapped_column(Float)
+    sp_x: Mapped[float | None] = mapped_column(Float)
+    sp_y: Mapped[float | None] = mapped_column(Float)
+    sp_z: Mapped[float | None] = mapped_column(Float)
+    fop_name: Mapped[str | None] = mapped_column(Text)
+    fop_path: Mapped[str | None] = mapped_column(Text)
+    project_number: Mapped[str | None] = mapped_column(Text)
+    project_name: Mapped[str | None] = mapped_column(Text)
+    project_stage: Mapped[str | None] = mapped_column(Text)
+    worksets_json: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    linked_files_json: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    status: Mapped[BimdataSnapshotStatus] = mapped_column(
+        SAEnum(BimdataSnapshotStatus, native_enum=False),
+        nullable=False,
+        default=BimdataSnapshotStatus.CREATED,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    elements: Mapped[list["BimdataElement"]] = relationship(
+        back_populates="snapshot", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+    __table_args__ = (
+        Index("ix_model_snapshots_company_date", "company_id", "snapshot_date"),
+        {"schema": SCHEMA_STG_BIM},
+    )
+
+
+class BimdataElement(Base):
+    __tablename__ = "mep_elements"
+
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA_STG_BIM}.model_snapshots.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    element_guid: Mapped[str] = mapped_column(Text, primary_key=True)
+    revit_id: Mapped[int | None] = mapped_column(Integer)
+    category_name: Mapped[str | None] = mapped_column(Text)
+    family_name: Mapped[str | None] = mapped_column(Text)
+    type_name: Mapped[str | None] = mapped_column(Text)
+    workset_name: Mapped[str | None] = mapped_column(Text)
+    level_guid: Mapped[str | None] = mapped_column(Text)
+    level_name: Mapped[str | None] = mapped_column(Text)
+    space_guid: Mapped[str | None] = mapped_column(Text)
+    system_classification: Mapped[str | None] = mapped_column(Text)
+    system_name: Mapped[str | None] = mapped_column(Text)
+    is_linear: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    length: Mapped[float | None] = mapped_column(Float)
+    dimension_1: Mapped[float | None] = mapped_column(Float)
+    dimension_2: Mapped[float | None] = mapped_column(Float)
+    location_point: Mapped[dict | None] = mapped_column(JSONB)
+    bounding_box_volume: Mapped[float | None] = mapped_column(Float)
+    bep_parameters: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    connectors_json: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+
+    snapshot: Mapped[BimdataSnapshot] = relationship(back_populates="elements")
+
+    __table_args__ = ({"schema": SCHEMA_STG_BIM},)
 
 
 class Company(Base):
