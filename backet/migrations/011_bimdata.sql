@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS stg_bim.model_snapshots (
 
 CREATE TABLE IF NOT EXISTS stg_bim.mep_elements (
     snapshot_id UUID NOT NULL REFERENCES stg_bim.model_snapshots(id) ON DELETE CASCADE,
+    snapshot_date TIMESTAMPTZ NOT NULL,
     element_guid TEXT NOT NULL,
     revit_id INTEGER,
     category_name TEXT,

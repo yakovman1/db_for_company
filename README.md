@@ -1,8 +1,8 @@
 # Revit Families Backend (FastAPI)
 
-Backend для Revit-плагинов: загрузка семейств (`.rfa`) в S3, метаданные в Postgres, синхронизация отверстий.
+Backend для Revit-плагинов: загрузка семейств (`.rfa`) в S3, метаданные в Postgres, синхронизация отверстий, приём BIMdata export.
 
-**Контракт API для FamilyMang:** `Family/docs/api_spec.md`
+**Контракт API:** `docs/api_spec.md` (rev 4)
 
 ## Stack
 
@@ -54,10 +54,12 @@ docker exec -it company_postgres psql -U families -d families -f /path/to/001_in
 | `002_openings.sql` | `ATPTLP_openmodels` — openings, opening_history |
 | `003_companies.sql` | `atptlp_info` — companies, company_users |
 | `004_openings_content_hash.sql` | колонка `content_hash` |
+| `011_bimdata.sql` | `stg_bim` — model_snapshots, mep_elements |
+| `012_bimdata_mep_elements_snapshot_date.sql` | колонка `mep_elements.snapshot_date` (если 011 уже применена без неё) |
 
 ## Auth
 
-### Plugin (FamilyMang, Openings)
+### Plugin (FamilyMang, Openings, BIMdata)
 
 ```http
 POST /api/v1/auth
@@ -121,6 +123,19 @@ curl -X POST http://localhost:8000/families/$FAMILY_ID/complete \
 | POST | `/api/v1/openings/sync` | Upsert / soft-delete отверстий |
 | GET | `/api/v1/openings?modelGuid=` | Список отверстий модели |
 
+## API — BIMdata (Revit plugin)
+
+Префикс `/api/v1/bimdata`. Auth: Plugin JWT. Контракт: `docs/api_spec.md`.
+
+| Method | Path | Описание |
+|--------|------|----------|
+| POST | `/api/v1/bimdata/snapshots` | Создать export session |
+| POST | `/api/v1/bimdata/snapshots/{snapshotId}/elements:batch` | Batch MEP elements |
+| POST | `/api/v1/bimdata/snapshots/{snapshotId}:complete` | Завершить export |
+| POST | `/api/v1/bimdata/snapshots/{snapshotId}:fail` | Пометить export failed |
+
+Данные пишутся в Postgres schema `stg_bim`. Аналитика — в `odm` через ETL.
+
 ## API — Health
 
 | Method | Path |
@@ -138,6 +153,15 @@ curl -X POST http://localhost:8000/families/$FAMILY_ID/complete \
 ### `ATPTLP_openmodels`
 
 - `openings`, `opening_history`
+
+### `stg_bim`
+
+- `model_snapshots` — export session (status: `created|completed|failed`)
+- `mep_elements` — MEP elements per snapshot; каждый element содержит `snapshot_date`
+
+### `odm`
+
+- planned operational/analytical layer (ETL from `stg_bim`, не пишется FastAPI ingest)
 
 ### `atptlp_info`
 
@@ -158,4 +182,4 @@ uvicorn app.main:app --reload
 
 - Object key: `projects/{project_id}/families/{family_id}/{sha256}.rfa`
 - Presigned S3 — без `Authorization`
-- `metadata.extra` (host/nested) сохраняется в JSONB; таблица связей и фильтры — не реализованы (см. api_spec rev 3)
+- `metadata.extra` (host/nested) сохраняется в JSONB; таблица связей и фильтры — не реализованы (см. api_spec rev 4)

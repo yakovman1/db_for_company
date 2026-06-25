@@ -255,6 +255,7 @@ class BimdataElement(Base):
         ForeignKey(f"{SCHEMA_STG_BIM}.model_snapshots.id", ondelete="CASCADE"),
         primary_key=True,
     )
+    snapshot_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     element_guid: Mapped[str] = mapped_column(Text, primary_key=True)
     revit_id: Mapped[int | None] = mapped_column(Integer)
     category_name: Mapped[str | None] = mapped_column(Text)
