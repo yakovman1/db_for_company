@@ -230,7 +230,11 @@ class BimdataSnapshot(Base):
     worksets_json: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     linked_files_json: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     status: Mapped[BimdataSnapshotStatus] = mapped_column(
-        SAEnum(BimdataSnapshotStatus, native_enum=False),
+        SAEnum(
+            BimdataSnapshotStatus,
+            native_enum=False,
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
         nullable=False,
         default=BimdataSnapshotStatus.CREATED,
     )

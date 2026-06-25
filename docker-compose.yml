@@ -246,6 +246,7 @@ services:
 
   backend:
     build: ./backet
+    restart: unless-stopped
     depends_on:
       - postgres
       - rustfs
