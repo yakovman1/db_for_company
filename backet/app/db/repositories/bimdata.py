@@ -112,6 +112,7 @@ async def mark_failed(session: AsyncSession, *, snapshot: BimdataSnapshot) -> Bi
 def _element_to_row(snapshot_id: uuid.UUID, element: MepElementPayload) -> dict:
     return {
         "snapshot_id": snapshot_id,
+        "snapshot_date": element.snapshot_date,
         "element_guid": element.element_guid,
         "revit_id": element.revit_id,
         "category_name": element.category_name,

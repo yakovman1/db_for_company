@@ -78,6 +78,7 @@ class ConnectorPayload(BaseModel):
 
 
 class MepElementPayload(BaseModel):
+    snapshot_date: datetime
     element_guid: str = Field(min_length=1)
     revit_id: int | None = None
     category_name: str | None = None
