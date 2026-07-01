@@ -202,22 +202,56 @@ services:
       context: ./config
       dockerfile: Dockerfile.superset
     image: company-superset:6.1.0
+    user: "0:0"
     depends_on:
       postgres: { condition: service_healthy }
+      rustfs: { condition: service_started }
     env_file: .env
     environment:
       SUPERSET_CONFIG_PATH: /app/pythonpath/superset_config.py
       SQLALCHEMY_DATABASE_URI: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/superset
       SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY}
+      SUPERSET_APP_NAME: ${SUPERSET_APP_NAME:-ATP architekten ingenieure}
+      SUPERSET_APP_ICON: ${SUPERSET_APP_ICON:-}
+      SUPERSET_LOGO_S3_BUCKET: ${SUPERSET_LOGO_S3_BUCKET:-for-superset}
+      SUPERSET_LOGO_S3_KEY: ${SUPERSET_LOGO_S3_KEY:-}
+      SUPERSET_LOGO_S3_KEY_DARK: ${SUPERSET_LOGO_S3_KEY_DARK:-}
+      SUPERSET_FAVICON_S3_KEY: ${SUPERSET_FAVICON_S3_KEY:-ATP_TLP.jpg}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://rustfs:9000}
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-}
+      SUPERSET_LOGO_TARGET_PATH: ${SUPERSET_LOGO_TARGET_PATH:-/superset/welcome/}
+      SUPERSET_BRAND_COLOR: ${SUPERSET_BRAND_COLOR:-#CC0033}
+      SUPERSET_BRAND_COLOR_LINK: ${SUPERSET_BRAND_COLOR_LINK:-#CC0033}
+      SUPERSET_BRAND_COLOR_TEXT: ${SUPERSET_BRAND_COLOR_TEXT:-#000000}
+      SUPERSET_BRAND_COLOR_NEUTRAL: ${SUPERSET_BRAND_COLOR_NEUTRAL:-#666666}
+      SUPERSET_BRAND_COLOR_BG: ${SUPERSET_BRAND_COLOR_BG:-#E6E6E6}
+      SUPERSET_BRAND_COLOR_SURFACE: ${SUPERSET_BRAND_COLOR_SURFACE:-#FFFFFF}
+      SUPERSET_BRAND_COLOR_SUCCESS: ${SUPERSET_BRAND_COLOR_SUCCESS:-#666666}
+      SUPERSET_BRAND_COLOR_WARNING: ${SUPERSET_BRAND_COLOR_WARNING:-#666666}
+      SUPERSET_BRAND_COLOR_ERROR: ${SUPERSET_BRAND_COLOR_ERROR:-#CC0033}
+      SUPERSET_BRAND_COLOR_INFO: ${SUPERSET_BRAND_COLOR_INFO:-#666666}
+      SUPERSET_BRAND_FONT_UI: ${SUPERSET_BRAND_FONT_UI:-Univers, Linotype Univers, Helvetica Neue, Helvetica, Arial, sans-serif}
+      SUPERSET_BRAND_FONT_CODE: ${SUPERSET_BRAND_FONT_CODE:-Univers, Linotype Univers, Courier New, monospace}
+      SUPERSET_LOGO_HEIGHT: ${SUPERSET_LOGO_HEIGHT:-64px}
+      SUPERSET_LOGO_MAX_WIDTH: ${SUPERSET_LOGO_MAX_WIDTH:-360}
+      SUPERSET_ROW_LIMIT: ${SUPERSET_ROW_LIMIT:-50000}
+      SUPERSET_SQL_MAX_ROW: ${SUPERSET_SQL_MAX_ROW:-100000}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_CACHE_DB: ${REDIS_CACHE_DB:-1}
     volumes:
       - ./config/superset_config.py:/app/pythonpath/superset_config.py:ro
+      - ./config/superset_branding:/app/superset/static/assets/images/branding
     entrypoint: /bin/bash
     command:
       - -c
       - |
-        superset db upgrade
-        superset fab create-admin --username ${SUPERSET_ADMIN_USER} --firstname Admin --lastname Admin --email ${SUPERSET_ADMIN_EMAIL} --password ${SUPERSET_ADMIN_PASSWORD} || true
-        superset init
+        mkdir -p /app/superset/static/assets/images/branding
+        chown -R superset:superset /app/superset/static/assets/images/branding
+        su superset -s /bin/bash -c "/app/sync_superset_branding.sh"
+        su superset -s /bin/bash -c "superset db upgrade"
+        su superset -s /bin/bash -c "superset fab create-admin --username ${SUPERSET_ADMIN_USER} --firstname Admin --lastname Admin --email ${SUPERSET_ADMIN_EMAIL} --password ${SUPERSET_ADMIN_PASSWORD}" || true
+        su superset -s /bin/bash -c "superset init"
 
   # 9. SUPERSET (Веб-интерфейс)
   superset:
@@ -238,9 +272,38 @@ services:
       SQLALCHEMY_DATABASE_URI: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/superset
       SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY}
       SECRET_KEY: ${SUPERSET_SECRET_KEY}
+      SUPERSET_APP_NAME: ${SUPERSET_APP_NAME:-ATP architekten ingenieure}
+      SUPERSET_APP_ICON: ${SUPERSET_APP_ICON:-}
+      SUPERSET_LOGO_S3_BUCKET: ${SUPERSET_LOGO_S3_BUCKET:-for-superset}
+      SUPERSET_LOGO_S3_KEY: ${SUPERSET_LOGO_S3_KEY:-}
+      SUPERSET_LOGO_S3_KEY_DARK: ${SUPERSET_LOGO_S3_KEY_DARK:-}
+      SUPERSET_FAVICON_S3_KEY: ${SUPERSET_FAVICON_S3_KEY:-ATP_TLP.jpg}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://rustfs:9000}
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-}
+      SUPERSET_LOGO_TARGET_PATH: ${SUPERSET_LOGO_TARGET_PATH:-/superset/welcome/}
+      SUPERSET_BRAND_COLOR: ${SUPERSET_BRAND_COLOR:-#CC0033}
+      SUPERSET_BRAND_COLOR_LINK: ${SUPERSET_BRAND_COLOR_LINK:-#CC0033}
+      SUPERSET_BRAND_COLOR_TEXT: ${SUPERSET_BRAND_COLOR_TEXT:-#000000}
+      SUPERSET_BRAND_COLOR_NEUTRAL: ${SUPERSET_BRAND_COLOR_NEUTRAL:-#666666}
+      SUPERSET_BRAND_COLOR_BG: ${SUPERSET_BRAND_COLOR_BG:-#E6E6E6}
+      SUPERSET_BRAND_COLOR_SURFACE: ${SUPERSET_BRAND_COLOR_SURFACE:-#FFFFFF}
+      SUPERSET_BRAND_COLOR_SUCCESS: ${SUPERSET_BRAND_COLOR_SUCCESS:-#666666}
+      SUPERSET_BRAND_COLOR_WARNING: ${SUPERSET_BRAND_COLOR_WARNING:-#666666}
+      SUPERSET_BRAND_COLOR_ERROR: ${SUPERSET_BRAND_COLOR_ERROR:-#CC0033}
+      SUPERSET_BRAND_COLOR_INFO: ${SUPERSET_BRAND_COLOR_INFO:-#666666}
+      SUPERSET_BRAND_FONT_UI: ${SUPERSET_BRAND_FONT_UI:-Univers, Linotype Univers, Helvetica Neue, Helvetica, Arial, sans-serif}
+      SUPERSET_BRAND_FONT_CODE: ${SUPERSET_BRAND_FONT_CODE:-Univers, Linotype Univers, Courier New, monospace}
+      SUPERSET_LOGO_HEIGHT: ${SUPERSET_LOGO_HEIGHT:-64px}
+      SUPERSET_LOGO_MAX_WIDTH: ${SUPERSET_LOGO_MAX_WIDTH:-360}
+      SUPERSET_ROW_LIMIT: ${SUPERSET_ROW_LIMIT:-50000}
+      SUPERSET_SQL_MAX_ROW: ${SUPERSET_SQL_MAX_ROW:-100000}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_CACHE_DB: ${REDIS_CACHE_DB:-1}
     volumes:
       - superset_home:/app/superset_home
       - ./config/superset_config.py:/app/pythonpath/superset_config.py:ro
+      - ./config/superset_branding:/app/superset/static/assets/images/branding:ro
     ports:
       - "8088:8088"
 
